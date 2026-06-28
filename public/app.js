@@ -216,9 +216,9 @@ function render() {
 }
 
 function resizeTextareas(root = document) {
-  root.querySelectorAll('textarea').forEach((textarea) => {
+  root.querySelectorAll('textarea:not(.scene-content)').forEach((textarea) => {
     textarea.style.height = 'auto';
-    textarea.style.height = `${Math.max(textarea.scrollHeight, textarea.classList.contains('scene-content') ? 440 : 0)}px`;
+    textarea.style.height = `${textarea.scrollHeight}px`;
   });
 }
 

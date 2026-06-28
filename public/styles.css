@@ -284,12 +284,15 @@ button { color: inherit; }
 .mode-button.active { background: var(--accent-soft); color: var(--accent-dark); }
 .scene-content {
   width: 100%;
-  min-height: 55vh;
-  padding: 0 0 120px;
+  height: 62vh;
+  min-height: 440px;
+  padding: 0 18px 40px 0;
   border: 0;
   outline: 0;
-  resize: none;
-  overflow: hidden;
+  resize: vertical;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   background: transparent;
   color: #34312c;
   font-family: var(--serif);
@@ -377,6 +380,7 @@ button { color: inherit; }
   .outline-list { max-height: 190px; }
   .editor-area { padding: 35px 22px 60px; }
   .editor-breadcrumb { margin-bottom: 22px; }
+  .scene-content { height: 60vh; min-height: 320px; }
   .library-page { width: min(100% - 32px, 1120px); padding-top: 35px; }
   .library-header { align-items: flex-start; flex-direction: column; }
   .library-header h1 { font-size: 32px; }
