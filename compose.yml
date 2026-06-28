@@ -1,0 +1,172 @@
+name: novella
+
+x-authentik-environment: &authentik-environment
+  AUTHENTIK_POSTGRESQL__HOST: postgresql
+  AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+  AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+  AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?Set PG_PASS in .env}
+  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?Set AUTHENTIK_SECRET_KEY in .env}
+  AUTHENTIK_LOG_LEVEL: ${AUTHENTIK_LOG_LEVEL:-info}
+
+services:
+  traefik:
+    image: traefik:v3.7
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false
+      - --api.dashboard=false
+      - --ping=true
+      - --accesslog=true
+      - --log.level=INFO
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=novella_proxy
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?Set ACME_EMAIL in .env}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certificates:/letsencrypt
+    networks:
+      - proxy
+    healthcheck:
+      test: [CMD, traefik, healthcheck, --ping]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  postgresql:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PG_DB:-authentik}
+      POSTGRES_USER: ${PG_USER:-authentik}
+      POSTGRES_PASSWORD: ${PG_PASS:?Set PG_PASS in .env}
+    volumes:
+      - authentik_database:/var/lib/postgresql/data
+    networks:
+      - authentik_backend
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      start_period: 20s
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.5.3}
+    command: server
+    restart: unless-stopped
+    shm_size: 512mb
+    environment: *authentik-environment
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    volumes:
+      - authentik_data:/data
+    networks:
+      - authentik_backend
+      - proxy
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: novella_proxy
+
+      traefik.http.services.authentik.loadbalancer.server.port: "9000"
+
+      traefik.http.routers.authentik.rule: Host(`${AUTHENTIK_HOST:?Set AUTHENTIK_HOST in .env}`)
+      traefik.http.routers.authentik.entrypoints: websecure
+      traefik.http.routers.authentik.tls: "true"
+      traefik.http.routers.authentik.tls.certresolver: letsencrypt
+      traefik.http.routers.authentik.service: authentik
+      traefik.http.routers.authentik.middlewares: security-headers@docker
+
+      traefik.http.routers.novella-outpost.rule: Host(`${NOVELLA_HOST:?Set NOVELLA_HOST in .env}`) && PathPrefix(`/outpost.goauthentik.io/`)
+      traefik.http.routers.novella-outpost.entrypoints: websecure
+      traefik.http.routers.novella-outpost.priority: "100"
+      traefik.http.routers.novella-outpost.tls: "true"
+      traefik.http.routers.novella-outpost.tls.certresolver: letsencrypt
+      traefik.http.routers.novella-outpost.service: authentik
+      traefik.http.routers.novella-outpost.middlewares: security-headers@docker
+
+      traefik.http.middlewares.authentik.forwardauth.address: http://authentik-server:9000/outpost.goauthentik.io/auth/traefik
+      traefik.http.middlewares.authentik.forwardauth.trustforwardheader: "true"
+      traefik.http.middlewares.authentik.forwardauth.maxresponsebodysize: "1048576"
+      traefik.http.middlewares.authentik.forwardauth.authresponseheaders: X-authentik-username,X-authentik-groups,X-authentik-entitlements,X-authentik-email,X-authentik-name,X-authentik-uid,X-authentik-jwt,X-authentik-meta-jwks,X-authentik-meta-outpost,X-authentik-meta-provider,X-authentik-meta-app,X-authentik-meta-version
+
+      traefik.http.middlewares.security-headers.headers.stsseconds: "31536000"
+      traefik.http.middlewares.security-headers.headers.contenttypenosniff: "true"
+      traefik.http.middlewares.security-headers.headers.framedeny: "true"
+      traefik.http.middlewares.security-headers.headers.referrerpolicy: no-referrer
+      traefik.http.middlewares.security-headers.headers.permissionspolicy: camera=(), microphone=(), geolocation=()
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.5.3}
+    command: worker
+    restart: unless-stopped
+    shm_size: 512mb
+    user: root
+    environment: *authentik-environment
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    volumes:
+      - authentik_data:/data
+    networks:
+      - authentik_backend
+
+  novella:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4173
+    volumes:
+      - ./data:/app/data
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    networks:
+      - proxy
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: novella_proxy
+      traefik.http.services.novella.loadbalancer.server.port: "4173"
+      traefik.http.routers.novella.rule: Host(`${NOVELLA_HOST:?Set NOVELLA_HOST in .env}`)
+      traefik.http.routers.novella.entrypoints: websecure
+      traefik.http.routers.novella.priority: "10"
+      traefik.http.routers.novella.tls: "true"
+      traefik.http.routers.novella.tls.certresolver: letsencrypt
+      traefik.http.routers.novella.service: novella
+      traefik.http.routers.novella.middlewares: authentik@docker,security-headers@docker
+
+networks:
+  proxy:
+    name: novella_proxy
+  authentik_backend:
+    name: novella_authentik_backend
+    internal: true
+
+volumes:
+  authentik_database:
+  authentik_data:
+  traefik_certificates:

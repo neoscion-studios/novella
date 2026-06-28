@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "title": "Signal at Low Tide",
+  "author": "Rowan Quill",
+  "chapters": [
+    {
+      "id": "signal-chapter-one",
+      "title": "The Receiver",
+      "summary": "June repairs an abandoned marine radio and hears a broadcast from a lighthouse lost decades ago.",
+      "scenes": [
+        {
+          "id": "signal-scene-static",
+          "title": "A voice in the static",
+          "synopsis": "An old receiver comes alive during the lowest tide of the year.",
+          "content": "At 2:13 in the morning, the dead radio said June's name.\n\nShe froze with the screwdriver still touching the corroded terminal. Around her, the harbor workshop ticked and settled. Rain worried at the windows. The receiver's dial had no power, no batteries, and no business glowing green beneath her hand.\n\n“June Calder,” the speaker repeated through a wash of static. “If you can hear this, do not let the light go out.”\n\nThen came three slow knocks, as though someone stood on the other side of a wooden door."
+        },
+        {
+          "id": "signal-scene-logbook",
+          "title": "The keeper's log",
+          "synopsis": "June compares the broadcast with her grandfather's lighthouse records.",
+          "content": "The municipal archive kept the Bellweather logbooks in a salt-stained carton marked **DECOMMISSIONED, 1974**. June found the final entry on a page buckled by damp.\n\n*October 17. Fog without wind. Lamp failing. Heard three knocks below the lantern room.*\n\nThere were no entries after that. Officially, the lighthouse had been empty when the winter storm took it into the sea. Unofficially, her grandfather had spent the rest of his life listening to a silent frequency.\n\nJune copied the coordinates written beneath the final entry. At low tide, they pointed not to open water, but to a path across the exposed harbor floor."
+        }
+      ]
+    },
+    {
+      "id": "signal-chapter-two",
+      "title": "Where the Water Waits",
+      "summary": "June follows the temporary path and finds the sea holding more than wreckage.",
+      "scenes": [
+        {
+          "id": "signal-scene-causeway",
+          "title": "The causeway",
+          "synopsis": "The retreating tide reveals a road toward the vanished lighthouse.",
+          "content": "By dawn, the harbor had emptied farther than anyone in town had ever seen. Boats leaned against their moorings. Buoys lay sleeping in the mud. From the last stone of the pier, a causeway ran toward the horizon beneath an arch of fog.\n\nJune carried the radio under one arm and her grandfather's logbook beneath her coat. Each step woke a brief blue light in the pools beside the road.\n\nHalfway out, the receiver crackled.\n\n“Please hurry,” said the voice. This time, it sounded exactly like hers.\n\nBehind June, the tide began to return."
+        }
+      ]
+    }
+  ],
+  "characters": [
+    {
+      "id": "signal-character-june",
+      "name": "June Calder",
+      "role": "Radio repairer",
+      "description": "A practical harbor technician with a talent for restoring obsolete machines and a family history she has avoided examining."
+    },
+    {
+      "id": "signal-character-ivo",
+      "name": "Ivo Calder",
+      "role": "June's grandfather",
+      "description": "A former lighthouse tender whose notebooks suggest he knew the Bellweather was never truly destroyed."
+    }
+  ],
+  "locations": [
+    {
+      "id": "signal-location-harbor",
+      "name": "Gannet Harbor",
+      "role": "Coastal town",
+      "description": "A working harbor built around dangerous tides, stubborn traditions, and a municipal archive that smells permanently of salt."
+    },
+    {
+      "id": "signal-location-bellweather",
+      "name": "Bellweather Lighthouse",
+      "role": "Vanished landmark",
+      "description": "A lighthouse believed lost in 1974. Its old marine frequency still broadcasts during exceptionally low tides."
+    }
+  ]
+}

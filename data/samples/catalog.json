@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "novels": [
+    {
+      "id": "sample-cartographers-lantern",
+      "title": "The Cartographer's Lantern",
+      "author": "Avery Vale",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "sample-signal-at-low-tide",
+      "title": "Signal at Low Tide",
+      "author": "Rowan Quill",
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "updatedAt": "2026-01-02T00:00:00.000Z"
+    }
+  ]
+}

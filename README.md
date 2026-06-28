@@ -1,6 +1,6 @@
 # Novella
 
-Novella is a local-first novel writing workspace. It stores the manuscript, character notes, and locations in a readable JSON file and exports the ordered manuscript as Markdown.
+Novella is a local-first novel writing workspace. It stores manuscripts, character notes, and locations in readable JSON files and exports each ordered manuscript as Markdown.
 
 ## Run it
 
@@ -10,7 +10,11 @@ Requires Node.js 20 or newer. No package installation is needed.
 npm start
 ```
 
-Open [http://localhost:4173](http://localhost:4173). Changes are saved automatically to `data/project.json`.
+Open [http://localhost:4173](http://localhost:4173). Use the novel selector above the manuscript title to create, switch, or delete novels. Changes are saved automatically under `data/novels/`, with metadata in `data/catalog.json`.
+
+Fresh installations begin with two fictional sample novels from `data/samples/`. The samples are copied into ignored runtime files on first launch, so editing them does not modify the Git repository.
+
+On first launch after upgrading, Novella safely imports the existing `data/project.json` as the first novel and leaves the original file untouched.
 
 Scene text supports Markdown. Use the formatting toolbar or `Ctrl/Cmd+B`, `Ctrl/Cmd+I`, and `Ctrl/Cmd+K`, then switch to **Preview** to see the formatted result.
 
@@ -22,3 +26,7 @@ Exports use level-one headings for the book title and level-two headings for cha
 npm run dev
 npm test
 ```
+
+## Private deployment
+
+The included [Compose stack](compose.yml) runs Novella behind Traefik, Let's Encrypt, and authentik forward authentication. Follow the complete [deployment guide](docs/deployment.md) before exposing the host to the internet.

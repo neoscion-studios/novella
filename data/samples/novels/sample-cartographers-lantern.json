@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "title": "The Cartographer's Lantern",
+  "author": "Avery Vale",
+  "chapters": [
+    {
+      "id": "lantern-chapter-one",
+      "title": "The Unmapped Street",
+      "summary": "Mira discovers a street that appears on no map and a shopkeeper who has been expecting her.",
+      "scenes": [
+        {
+          "id": "lantern-scene-door",
+          "title": "A door that wasn't there",
+          "synopsis": "A wrong turn leads Mira beyond the edge of her own map.",
+          "content": "The rain had softened every line in the city by the time Mira noticed the door. It stood between a bakery and a boarded tailor shop, painted the blue-black color of a sky just before snow. She had walked this block each morning for eleven years. Yesterday, there had been only brick.\n\nShe unfolded the survey map beneath the shelter of her umbrella. The measurements were exact, as they always were, but the paper showed no room for a door, much less the narrow lane she could see through its glass.\n\n## A note in the margin\n\nIn handwriting that was not hers, four words had appeared beside the block: **Bring back the lantern.**"
+        },
+        {
+          "id": "lantern-scene-shop",
+          "title": "The lantern shop",
+          "synopsis": "Mira enters the hidden lane and meets its sole shopkeeper.",
+          "content": "A bell chimed when Mira crossed the threshold, though the bell itself hung perfectly still. Inside, hundreds of lanterns floated at different heights. Some held ordinary flames. Others contained tiny thunderstorms, summer afternoons, or the glow of windows seen from a long way home.\n\nThe shopkeeper looked up from his ledger. “You took your time,” he said.\n\nMira closed the door behind her. “I think you have mistaken me for someone else.”\n\n> The shopkeeper smiled as if this were the answer he had hoped to hear."
+        }
+      ]
+    },
+    {
+      "id": "lantern-chapter-two",
+      "title": "North of Memory",
+      "summary": "The lantern reveals a road that can only be followed by forgetting where it began.",
+      "scenes": [
+        {
+          "id": "lantern-scene-compass",
+          "title": "A compass for lost places",
+          "synopsis": "Mira accepts the lantern and learns its first rule.",
+          "content": "The lantern was smaller than Mira expected. Its brass frame was warm, and its empty glass cast a circle of amber light across the counter. Within that circle, the city map changed. Streets uncurled like fern fronds. A river flowed uphill. Beyond the northern boundary, where the paper had always been blank, a road drew itself in silver ink.\n\n“There is one rule,” the shopkeeper said. “Every hidden road asks for a memory as its toll.”\n\nMira watched the silver line point toward the mountains. Somewhere beyond them, if the impossible map could be trusted, was the village where her brother had vanished.\n\nShe lifted the lantern. “Show me the way.”"
+        }
+      ]
+    }
+  ],
+  "characters": [
+    {
+      "id": "lantern-character-mira",
+      "name": "Mira Saye",
+      "role": "City cartographer",
+      "description": "A meticulous surveyor who trusts measured distances more than memories. She is searching for the brother everyone else has forgotten."
+    },
+    {
+      "id": "lantern-character-shopkeeper",
+      "name": "Oren Pell",
+      "role": "Keeper of lost lights",
+      "description": "The patient proprietor of a shop that appears only when the city has misplaced something important."
+    }
+  ],
+  "locations": [
+    {
+      "id": "lantern-location-lane",
+      "name": "The Unmapped Street",
+      "role": "Hidden district",
+      "description": "A narrow lane absent from official maps. Its storefronts collect places, promises, and people the city has forgotten."
+    },
+    {
+      "id": "lantern-location-shop",
+      "name": "Pell's Lanterns",
+      "role": "Threshold",
+      "description": "A warm, crowded shop where every lantern illuminates a different kind of absence."
+    }
+  ]
+}

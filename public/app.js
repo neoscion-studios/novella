@@ -10,6 +10,8 @@ let saveTimer = null;
 let savePromise = Promise.resolve();
 let draggedItem = null;
 let editorMode = 'write';
+let novels = [];
+let activeNovelId = null;
 
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const escapeHtml = (value = '') => String(value)
@@ -57,23 +59,41 @@ function scheduleSave() {
 }
 
 function saveNow() {
+  if (!project || !activeNovelId) return Promise.resolve(true);
   clearTimeout(saveTimer);
   saveTimer = null;
   setSaveStatus('saving', 'Saving…');
   const snapshot = JSON.stringify(project);
+  const novelId = activeNovelId;
   savePromise = savePromise.then(async () => {
-    const response = await fetch('/api/project', {
+    const response = await fetch(`/api/novels/${encodeURIComponent(novelId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: snapshot
     });
     if (!response.ok) throw new Error('Save failed');
     setSaveStatus('', 'Saved');
+    return true;
   }).catch(() => {
     setSaveStatus('error', 'Not saved');
     showToast('Could not save. Your edits remain in this window.');
+    return false;
   });
   return savePromise;
+}
+
+function novelPickerMarkup() {
+  const options = novels.map((novel) => `
+    <option value="${escapeHtml(novel.id)}" ${novel.id === activeNovelId ? 'selected' : ''}>${escapeHtml(novel.title || 'Untitled novel')}</option>`).join('');
+  return `
+    <div class="novel-picker">
+      <label for="novelSwitcher">Novel library</label>
+      <div class="novel-picker-row">
+        <select id="novelSwitcher" data-novel-switcher aria-label="Current novel">${options}</select>
+        <button class="icon-button novel-action" data-add-novel title="Create a novel" aria-label="Create a novel">＋</button>
+        <button class="icon-button novel-action" data-delete-novel title="Delete this novel" aria-label="Delete this novel" ${novels.length <= 1 ? 'disabled' : ''}>×</button>
+      </div>
+    </div>`;
 }
 
 function chapterMarkup(chapter, chapterIndex) {
@@ -102,7 +122,7 @@ function renderManuscript() {
     <div class="manuscript-layout">
       <aside class="outline">
         <div class="outline-header">
-          <p class="eyebrow">Your manuscript</p>
+          ${novelPickerMarkup()}
           <input class="project-title-input" data-project-field="title" aria-label="Novel title" value="${escapeHtml(project.title)}" placeholder="Untitled novel" />
           <input class="author-input" data-project-field="author" aria-label="Author" value="${escapeHtml(project.author)}" placeholder="Add author name" />
         </div>
@@ -309,6 +329,83 @@ function addReference() {
   requestAnimationFrame(() => document.querySelector('.reference-card:last-of-type .reference-name')?.select());
 }
 
+async function loadNovel(novelId) {
+  const response = await fetch(`/api/novels/${encodeURIComponent(novelId)}`);
+  if (!response.ok) throw new Error('Unable to load novel');
+  project = await response.json();
+  activeNovelId = novelId;
+  activeSceneId = firstSceneId();
+  localStorage.setItem('novella.activeNovelId', novelId);
+}
+
+async function switchNovel(novelId) {
+  if (!novelId || novelId === activeNovelId) return;
+  const previousId = activeNovelId;
+  if (!(await saveNow())) {
+    const switcher = document.querySelector('[data-novel-switcher]');
+    if (switcher) switcher.value = previousId;
+    return;
+  }
+  app.innerHTML = '<div class="loading-state"><span class="loader"></span> Opening novel…</div>';
+  try {
+    await loadNovel(novelId);
+    editorMode = 'write';
+    render();
+    showToast(`Opened “${project.title}”`);
+  } catch {
+    activeNovelId = previousId;
+    render();
+    showToast('Could not open that novel.');
+  }
+}
+
+async function createNovel() {
+  if (!(await saveNow())) return;
+  try {
+    const response = await fetch('/api/novels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Untitled novel' })
+    });
+    if (!response.ok) throw new Error('Unable to create novel');
+    const created = await response.json();
+    novels.push(created.novel);
+    project = created.project;
+    activeNovelId = created.novel.id;
+    activeSceneId = firstSceneId();
+    editorMode = 'write';
+    localStorage.setItem('novella.activeNovelId', activeNovelId);
+    renderManuscript();
+    setSaveStatus('', 'Saved');
+    requestAnimationFrame(() => document.querySelector('.project-title-input')?.select());
+  } catch {
+    showToast('Could not create a new novel.');
+  }
+}
+
+async function deleteCurrentNovel() {
+  if (novels.length <= 1) return;
+  const summary = novels.find((novel) => novel.id === activeNovelId);
+  if (!summary || !(await askToDelete('Delete this novel?', `“${summary.title}” and all of its chapters, characters, and locations will be permanently removed.`))) return;
+
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  try {
+    await savePromise;
+    const response = await fetch(`/api/novels/${encodeURIComponent(activeNovelId)}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Unable to delete novel');
+    const catalog = await response.json();
+    novels = catalog.novels;
+    await loadNovel(novels[0].id);
+    editorMode = 'write';
+    render();
+    showToast('Novel deleted');
+  } catch {
+    showToast('Could not delete that novel.');
+    render();
+  }
+}
+
 function askToDelete(title, message) {
   document.querySelector('#confirmTitle').textContent = title;
   document.querySelector('#confirmMessage').textContent = message;
@@ -357,6 +454,8 @@ app.addEventListener('click', (event) => {
   if (formatButton) return applyMarkdownFormat(formatButton.dataset.format);
   const modeButton = event.target.closest('[data-editor-mode]');
   if (modeButton) return setEditorMode(modeButton.dataset.editorMode);
+  if (event.target.closest('[data-add-novel]')) return createNovel();
+  if (event.target.closest('[data-delete-novel]')) return deleteCurrentNovel();
   const sceneRow = event.target.closest('.scene-row');
   if (sceneRow && !draggedItem) {
     activeSceneId = sceneRow.dataset.sceneId;
@@ -375,11 +474,21 @@ app.addEventListener('click', (event) => {
   if (deleteReferenceButton) return deleteReference(deleteReferenceButton.dataset.deleteReference);
 });
 
+app.addEventListener('change', (event) => {
+  if (event.target.matches('[data-novel-switcher]')) switchNovel(event.target.value);
+});
+
 app.addEventListener('input', (event) => {
   const input = event.target;
-  if (input.matches('textarea')) resizeTextareas(input.parentElement);
-
-  if (input.dataset.projectField) project[input.dataset.projectField] = input.value;
+  if (input.dataset.projectField) {
+    project[input.dataset.projectField] = input.value;
+    const summary = novels.find((novel) => novel.id === activeNovelId);
+    if (summary) summary[input.dataset.projectField] = input.value;
+    if (input.dataset.projectField === 'title') {
+      const option = document.querySelector(`[data-novel-switcher] option[value="${CSS.escape(activeNovelId)}"]`);
+      if (option) option.textContent = input.value || 'Untitled novel';
+    }
+  }
 
   if (input.dataset.chapterTitle) {
     const chapter = project.chapters.find((item) => item.id === input.dataset.chapterTitle);
@@ -497,9 +606,9 @@ app.addEventListener('dragend', () => {
 
 document.querySelector('.export-button').addEventListener('click', async (event) => {
   event.preventDefault();
-  await saveNow();
+  if (!(await saveNow())) return;
   const link = document.createElement('a');
-  link.href = `/api/export?t=${Date.now()}`;
+  link.href = `/api/novels/${encodeURIComponent(activeNovelId)}/export?t=${Date.now()}`;
   link.download = '';
   document.body.appendChild(link);
   link.click();
@@ -514,10 +623,14 @@ window.addEventListener('beforeunload', (event) => {
 
 async function init() {
   try {
-    const response = await fetch('/api/project');
-    if (!response.ok) throw new Error('Unable to load project');
-    project = await response.json();
-    activeSceneId = firstSceneId();
+    const catalogResponse = await fetch('/api/novels');
+    if (!catalogResponse.ok) throw new Error('Unable to load novel catalog');
+    const catalog = await catalogResponse.json();
+    novels = catalog.novels;
+    const remembered = localStorage.getItem('novella.activeNovelId');
+    const initialNovel = novels.find((novel) => novel.id === remembered) || novels[0];
+    if (!initialNovel) throw new Error('Novel catalog is empty');
+    await loadNovel(initialNovel.id);
     render();
   } catch (error) {
     app.innerHTML = `<div class="empty-editor"><div class="empty-illustration">!</div><h2>We couldn't open your manuscript</h2><p>Make sure the local Novella server is running, then refresh this page.</p></div>`;
