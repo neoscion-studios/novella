@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Novella — a local-first workspace for writing stories." />
+    <title>Novella</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Novella home">
+          <span class="brand-mark" aria-hidden="true">N</span>
+          <span>Novella</span>
+        </a>
+        <nav class="primary-nav" aria-label="Workspace">
+          <button class="nav-item active" data-view="manuscript">Manuscript</button>
+          <button class="nav-item" data-view="characters">Characters</button>
+          <button class="nav-item" data-view="locations">Locations</button>
+        </nav>
+        <div class="top-actions">
+          <span id="saveStatus" class="save-status"><span class="status-dot"></span> Saved</span>
+          <a class="export-button" href="/api/export" download>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg>
+            Export
+          </a>
+        </div>
+      </header>
+
+      <main id="app" class="workspace" aria-live="polite">
+        <div class="loading-state"><span class="loader"></span> Opening your manuscript…</div>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status"></div>
+    <dialog id="confirmDialog" class="dialog">
+      <form method="dialog">
+        <div class="dialog-icon">!</div>
+        <h2 id="confirmTitle">Delete this item?</h2>
+        <p id="confirmMessage">This cannot be undone.</p>
+        <div class="dialog-actions">
+          <button value="cancel" class="button secondary">Keep it</button>
+          <button value="confirm" class="button danger">Delete</button>
+        </div>
+      </form>
+    </dialog>
+    <script src="/markdown.js" defer></script>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

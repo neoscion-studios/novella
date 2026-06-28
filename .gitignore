@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Test and coverage output
+coverage/
+.nyc_output/
+
+# Logs and local process files
+*.log
+*.pid
+*.pid.lock
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files written during atomic saves
+data/*.tmp
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local environment overrides
+.env
+.env.*
+!.env.example

@@ -1,0 +1,14 @@
+{
+  "name": "novella",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A calm, local-first workspace for writing novels.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
