@@ -32,6 +32,21 @@ openssl rand -base64 60 | tr -d '\n'
 
 Paste the first value into `PG_PASS` and the second into `AUTHENTIK_SECRET_KEY`. Do not change the authentik secret after installation; doing so invalidates active sessions.
 
+### Optional: ElevenLabs narration
+
+To enable the scene **Listen** button, add your ElevenLabs credentials to `.env`:
+
+```dotenv
+ELEVENLABS_API_KEY=your-api-key
+ELEVENLABS_VOICE_ID=your-voice-id
+ELEVENLABS_MODEL_ID=eleven_flash_v2_5
+ELEVENLABS_ENABLE_LOGGING=false
+```
+
+Copy the voice ID from the voice details in your ElevenLabs account. The default Flash v2.5 model supports scenes up to 40,000 characters and favors responsive playback. For higher-fidelity narration, use `eleven_multilingual_v2`; its per-request limit is 10,000 characters.
+
+The key is passed only to the Novella container and is never returned to the browser. With logging disabled, Novella requests ElevenLabs zero-retention mode. Scene text still leaves your server for speech generation, so enable narration only if that privacy tradeoff is acceptable.
+
 ## 2. Validate and start the stack
 
 ```sh

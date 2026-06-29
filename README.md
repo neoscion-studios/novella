@@ -18,6 +18,8 @@ On first launch after upgrading, Novella safely imports the existing `data/proje
 
 Scene text supports Markdown. Use the formatting toolbar or `Ctrl/Cmd+B`, `Ctrl/Cmd+I`, and `Ctrl/Cmd+K`, then switch to **Preview** to see the formatted result.
 
+When ElevenLabs is configured, the **Listen** button reads the current scene aloud. The API key remains on the server and is never sent to the browser.
+
 Exports use level-one headings for the book title and level-two headings for chapters. Scene names stay private to the workspace; written scenes are separated with `* * *`, and headings inside scene text are shifted down two levels to preserve the manuscript hierarchy.
 
 ## Development

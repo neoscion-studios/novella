@@ -242,6 +242,26 @@ button { color: inherit; }
 }
 .scene-synopsis-input { width: 100%; padding: 0 0 24px; border: 0; border-bottom: 1px solid var(--line); outline: 0; resize: none; background: transparent; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .editor-meta { display: flex; justify-content: space-between; align-items: center; padding: 13px 0 25px; color: var(--soft); font-size: 11px; }
+.scene-tools { display: flex; align-items: center; gap: 14px; }
+.listen-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--white);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+.listen-button:hover:not(:disabled) { border-color: #d6b5a8; color: var(--accent-dark); background: var(--accent-soft); }
+.listen-button:disabled { cursor: not-allowed; opacity: .45; }
+.listen-button.playing { border-color: #d6b5a8; color: var(--accent-dark); background: var(--accent-soft); }
+.listen-icon { display: inline-grid; place-items: center; width: 12px; font-size: 10px; }
+.listen-button.loading .listen-icon { animation: spin .85s linear infinite; }
 .delete-link { padding: 3px 0; border: 0; background: transparent; color: var(--soft); cursor: pointer; font-size: 11px; }
 .delete-link:hover { color: #ad4033; }
 .markdown-toolbar {

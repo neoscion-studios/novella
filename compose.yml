@@ -141,6 +141,10 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 4173
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
+      ELEVENLABS_MODEL_ID: ${ELEVENLABS_MODEL_ID:-eleven_flash_v2_5}
+      ELEVENLABS_ENABLE_LOGGING: ${ELEVENLABS_ENABLE_LOGGING:-false}
     volumes:
       - ./data:/app/data
     tmpfs:

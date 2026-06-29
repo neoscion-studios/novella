@@ -12,6 +12,8 @@ let draggedItem = null;
 let editorMode = 'write';
 let novels = [];
 let activeNovelId = null;
+let ttsConfig = { enabled: false, modelId: '', maxCharacters: 0 };
+let narration = { sceneId: null, state: 'idle', audio: null, objectUrl: null, controller: null };
 
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const escapeHtml = (value = '') => String(value)
@@ -82,6 +84,112 @@ function saveNow() {
   return savePromise;
 }
 
+function narrationButtonMarkup(scene) {
+  const state = narration.sceneId === scene.id ? narration.state : 'idle';
+  const labels = { loading: 'Preparing…', playing: 'Pause', paused: 'Resume', ready: 'Replay', idle: 'Listen' };
+  const icons = { loading: '◌', playing: 'Ⅱ', paused: '▶', ready: '↻', idle: '▶' };
+  const disabled = !ttsConfig.enabled || !scene.content.trim();
+  const title = !ttsConfig.enabled
+    ? 'Configure ElevenLabs to enable narration'
+    : !scene.content.trim() ? 'Add scene text to enable narration' : 'Read this scene aloud';
+  return `
+    <button class="listen-button ${state}" data-listen-scene="${escapeHtml(scene.id)}" title="${title}" ${disabled ? 'disabled' : ''}>
+      <span class="listen-icon" aria-hidden="true">${icons[state]}</span>
+      <span data-listen-label>${labels[state]}</span>
+    </button>`;
+}
+
+function updateNarrationButton(sceneId = narration.sceneId) {
+  if (!sceneId) return;
+  const button = document.querySelector(`[data-listen-scene="${CSS.escape(sceneId)}"]`);
+  if (!button) return;
+  const found = findScene(sceneId);
+  const state = narration.sceneId === sceneId ? narration.state : 'idle';
+  const labels = { loading: 'Preparing…', playing: 'Pause', paused: 'Resume', ready: 'Replay', idle: 'Listen' };
+  const icons = { loading: '◌', playing: 'Ⅱ', paused: '▶', ready: '↻', idle: '▶' };
+  button.className = `listen-button ${state}`;
+  button.disabled = !ttsConfig.enabled || !found?.scene.content.trim();
+  button.querySelector('[data-listen-label]').textContent = labels[state];
+  button.querySelector('.listen-icon').textContent = icons[state];
+}
+
+function setNarrationState(state) {
+  narration.state = state;
+  updateNarrationButton();
+}
+
+function discardNarration() {
+  const previousSceneId = narration.sceneId;
+  narration.controller?.abort();
+  if (narration.audio) {
+    narration.audio.pause();
+    narration.audio.removeAttribute('src');
+  }
+  if (narration.objectUrl) URL.revokeObjectURL(narration.objectUrl);
+  narration = { sceneId: null, state: 'idle', audio: null, objectUrl: null, controller: null };
+  updateNarrationButton(previousSceneId);
+}
+
+async function toggleNarration(sceneId) {
+  const found = findScene(sceneId);
+  if (!found?.scene.content.trim()) return showToast('Add some scene text before listening.');
+
+  if (narration.sceneId === sceneId) {
+    if (narration.state === 'loading') return discardNarration();
+    if (narration.state === 'playing') {
+      narration.audio.pause();
+      return setNarrationState('paused');
+    }
+    if (narration.audio && (narration.state === 'paused' || narration.state === 'ready')) {
+      try {
+        await narration.audio.play();
+        return setNarrationState('playing');
+      } catch {
+        return showToast('Your browser blocked audio playback. Press Listen again.');
+      }
+    }
+  }
+
+  discardNarration();
+  const controller = new AbortController();
+  narration = { sceneId, state: 'loading', audio: null, objectUrl: null, controller };
+  updateNarrationButton();
+
+  try {
+    const response = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: found.scene.content }),
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Narration could not be generated.' }));
+      throw new Error(error.error);
+    }
+    if (narration.controller !== controller) return;
+
+    const objectUrl = URL.createObjectURL(await response.blob());
+    const audio = new Audio(objectUrl);
+    narration.audio = audio;
+    narration.objectUrl = objectUrl;
+    narration.controller = null;
+    audio.addEventListener('ended', () => {
+      audio.currentTime = 0;
+      setNarrationState('ready');
+    });
+    audio.addEventListener('error', () => {
+      discardNarration();
+      showToast('The generated audio could not be played.');
+    });
+    await audio.play();
+    setNarrationState('playing');
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    discardNarration();
+    showToast(error.message || 'Narration could not be generated.');
+  }
+}
+
 function novelPickerMarkup() {
   const options = novels.map((novel) => `
     <option value="${escapeHtml(novel.id)}" ${novel.id === activeNovelId ? 'selected' : ''}>${escapeHtml(novel.title || 'Untitled novel')}</option>`).join('');
@@ -145,7 +253,10 @@ function editorMarkup(chapter, scene) {
       <input class="scene-title-input" data-scene-field="title" aria-label="Scene title" value="${escapeHtml(scene.title)}" placeholder="Untitled scene" />
       <textarea class="scene-synopsis-input" data-scene-field="synopsis" rows="1" aria-label="Scene synopsis" placeholder="Add a brief scene note…">${escapeHtml(scene.synopsis)}</textarea>
       <div class="editor-meta">
-        <span id="editorWordCount">${pluralize(countWords(scene.content), 'word')}</span>
+        <div class="scene-tools">
+          <span id="editorWordCount">${pluralize(countWords(scene.content), 'word')}</span>
+          ${narrationButtonMarkup(scene)}
+        </div>
         <button class="delete-link" data-delete-scene="${escapeHtml(scene.id)}">Delete scene</button>
       </div>
       <div class="markdown-toolbar">
@@ -340,6 +451,7 @@ async function loadNovel(novelId) {
 
 async function switchNovel(novelId) {
   if (!novelId || novelId === activeNovelId) return;
+  discardNarration();
   const previousId = activeNovelId;
   if (!(await saveNow())) {
     const switcher = document.querySelector('[data-novel-switcher]');
@@ -360,6 +472,7 @@ async function switchNovel(novelId) {
 }
 
 async function createNovel() {
+  discardNarration();
   if (!(await saveNow())) return;
   try {
     const response = await fetch('/api/novels', {
@@ -388,6 +501,7 @@ async function deleteCurrentNovel() {
   const summary = novels.find((novel) => novel.id === activeNovelId);
   if (!summary || !(await askToDelete('Delete this novel?', `“${summary.title}” and all of its chapters, characters, and locations will be permanently removed.`))) return;
 
+  discardNarration();
   clearTimeout(saveTimer);
   saveTimer = null;
   try {
@@ -418,6 +532,7 @@ function askToDelete(title, message) {
 async function deleteScene(sceneId) {
   const found = findScene(sceneId);
   if (!found || !(await askToDelete('Delete this scene?', `“${found.scene.title || 'Untitled scene'}” will be permanently removed.`))) return;
+  if (narration.sceneId === sceneId) discardNarration();
   found.chapter.scenes = found.chapter.scenes.filter((scene) => scene.id !== sceneId);
   activeSceneId = firstSceneId();
   renderManuscript();
@@ -444,12 +559,15 @@ async function deleteReference(id) {
 document.querySelector('.primary-nav').addEventListener('click', (event) => {
   const button = event.target.closest('[data-view]');
   if (!button) return;
+  discardNarration();
   currentView = button.dataset.view;
   document.querySelectorAll('[data-view]').forEach((item) => item.classList.toggle('active', item === button));
   render();
 });
 
 app.addEventListener('click', (event) => {
+  const listenButton = event.target.closest('[data-listen-scene]');
+  if (listenButton) return toggleNarration(listenButton.dataset.listenScene);
   const formatButton = event.target.closest('[data-format]');
   if (formatButton) return applyMarkdownFormat(formatButton.dataset.format);
   const modeButton = event.target.closest('[data-editor-mode]');
@@ -458,6 +576,7 @@ app.addEventListener('click', (event) => {
   if (event.target.closest('[data-delete-novel]')) return deleteCurrentNovel();
   const sceneRow = event.target.closest('.scene-row');
   if (sceneRow && !draggedItem) {
+    if (sceneRow.dataset.sceneId !== activeSceneId) discardNarration();
     activeSceneId = sceneRow.dataset.sceneId;
     renderManuscript();
     return;
@@ -504,6 +623,7 @@ app.addEventListener('input', (event) => {
       if (label) label.textContent = input.value || 'Untitled scene';
     }
     if (input.dataset.sceneField === 'content') {
+      if (narration.sceneId === found.scene.id) discardNarration();
       const count = countWords(input.value);
       const editorCount = document.querySelector('#editorWordCount');
       const outlineCount = document.querySelector(`[data-scene-id="${CSS.escape(found.scene.id)}"] .scene-word-count`);
@@ -623,8 +743,12 @@ window.addEventListener('beforeunload', (event) => {
 
 async function init() {
   try {
-    const catalogResponse = await fetch('/api/novels');
+    const [catalogResponse, ttsResponse] = await Promise.all([
+      fetch('/api/novels'),
+      fetch('/api/tts/config').catch(() => null)
+    ]);
     if (!catalogResponse.ok) throw new Error('Unable to load novel catalog');
+    if (ttsResponse?.ok) ttsConfig = await ttsResponse.json();
     const catalog = await catalogResponse.json();
     novels = catalog.novels;
     const remembered = localStorage.getItem('novella.activeNovelId');

@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const { createApp, projectToMarkdown, validateProject } = require('../server');
+const { createApp, plainTextForSpeech, projectToMarkdown, validateProject } = require('../server');
 const { renderMarkdown } = require('../public/markdown');
 
 const sample = {
@@ -63,6 +63,53 @@ test('renders safe Markdown previews', () => {
   assert.match(rendered, /<a href="\/notes">Home<\/a>/);
   assert.doesNotMatch(rendered, /<script>/);
   assert.match(rendered, /&lt;script&gt;/);
+});
+
+test('prepares scene Markdown for natural narration', () => {
+  assert.equal(
+    plainTextForSpeech('# The room\n\nShe found **one** [letter](/letter).\n\n> Read it.\n\n---'),
+    'The room\n\nShe found one letter.\n\nRead it.'
+  );
+});
+
+test('proxies scene narration without exposing the API key', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'novella-tts-'));
+  let upstreamRequest;
+  const fetchImpl = async (url, options) => {
+    upstreamRequest = { url, options };
+    return new Response(Uint8Array.from([73, 68, 51]), {
+      status: 200,
+      headers: { 'Content-Type': 'audio/mpeg' }
+    });
+  };
+  const server = http.createServer(createApp({
+    dataDir: directory,
+    dataFile: path.join(directory, 'project.json'),
+    fetchImpl,
+    ttsConfig: { apiKey: 'server-secret', voiceId: 'voice-123', modelId: 'eleven_flash_v2_5' }
+  }));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const config = await fetch(`${base}/api/tts/config`).then((response) => response.json());
+  assert.deepEqual(config, { enabled: true, modelId: 'eleven_flash_v2_5', maxCharacters: 40000 });
+  assert.equal(JSON.stringify(config).includes('server-secret'), false);
+
+  const response = await fetch(`${base}/api/tts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: '# Opening\n\nA **quiet** room.' })
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'audio/mpeg');
+  assert.deepEqual([...new Uint8Array(await response.arrayBuffer())], [73, 68, 51]);
+  assert.match(upstreamRequest.url, /voice-123\/stream\?.*enable_logging=false/);
+  assert.equal(upstreamRequest.options.headers['xi-api-key'], 'server-secret');
+  assert.deepEqual(JSON.parse(upstreamRequest.options.body), {
+    text: 'Opening\n\nA quiet room.',
+    model_id: 'eleven_flash_v2_5'
+  });
 });
 
 test('seeds fresh installations with two fictional sample novels', async (t) => {

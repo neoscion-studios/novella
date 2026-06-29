@@ -7,6 +7,12 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DEFAULT_DATA_FILE = path.join(ROOT, 'data', 'project.json');
 const MAX_BODY_SIZE = 5 * 1024 * 1024;
+const TTS_MODEL_LIMITS = {
+  eleven_v3: 5000,
+  eleven_multilingual_v2: 10000,
+  eleven_flash_v2: 30000,
+  eleven_flash_v2_5: 40000
+};
 
 const contentTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -93,6 +99,23 @@ function normalizeSceneMarkdown(content) {
   }).join('\n');
 }
 
+function plainTextForSpeech(content) {
+  return cleanText(content)
+    .replace(/^[ \t]*```[^\n]*$/gm, '')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '')
+    .replace(/^[ \t]*>[ \t]?/gm, '')
+    .replace(/^[ \t]*[-+*][ \t]+/gm, '')
+    .replace(/^[ \t]*\d+\.[ \t]+/gm, '')
+    .replace(/^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, '')
+    .replace(/[*_~`]/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 async function readBody(request) {
   const chunks = [];
   let size = 0;
@@ -109,9 +132,22 @@ function send(response, status, body, type = 'application/json; charset=utf-8') 
   response.end(body);
 }
 
-function createApp({ dataFile = DEFAULT_DATA_FILE, dataDir = path.dirname(dataFile), publicDir = PUBLIC_DIR } = {}) {
+function createApp({
+  dataFile = DEFAULT_DATA_FILE,
+  dataDir = path.dirname(dataFile),
+  publicDir = PUBLIC_DIR,
+  fetchImpl = globalThis.fetch,
+  ttsConfig = {}
+} = {}) {
   const catalogFile = path.join(dataDir, 'catalog.json');
   const novelsDir = path.join(dataDir, 'novels');
+  const speech = {
+    apiKey: ttsConfig.apiKey ?? process.env.ELEVENLABS_API_KEY ?? '',
+    voiceId: ttsConfig.voiceId ?? process.env.ELEVENLABS_VOICE_ID ?? '',
+    modelId: ttsConfig.modelId ?? process.env.ELEVENLABS_MODEL_ID ?? 'eleven_flash_v2_5',
+    enableLogging: String(ttsConfig.enableLogging ?? process.env.ELEVENLABS_ENABLE_LOGGING ?? 'false') === 'true'
+  };
+  speech.maxCharacters = TTS_MODEL_LIMITS[speech.modelId] || 40000;
   let saveQueue = Promise.resolve();
   let initializationPromise = null;
 
@@ -287,6 +323,72 @@ function createApp({ dataFile = DEFAULT_DATA_FILE, dataDir = path.dirname(dataFi
         return send(response, 200, JSON.stringify({ ok: true }));
       }
 
+      if (url.pathname === '/api/tts/config' && request.method === 'GET') {
+        return send(response, 200, JSON.stringify({
+          enabled: Boolean(speech.apiKey && speech.voiceId),
+          modelId: speech.modelId,
+          maxCharacters: speech.maxCharacters
+        }));
+      }
+
+      if (url.pathname === '/api/tts' && request.method === 'POST') {
+        if (!speech.apiKey || !speech.voiceId) {
+          const error = new Error('ElevenLabs narration is not configured.');
+          error.statusCode = 503;
+          throw error;
+        }
+
+        const input = JSON.parse(await readBody(request));
+        const text = plainTextForSpeech(input?.text);
+        if (!text) {
+          const error = new Error('This scene has no text to narrate.');
+          error.statusCode = 400;
+          throw error;
+        }
+        if (text.length > speech.maxCharacters) {
+          const error = new Error(`This scene exceeds the ${speech.maxCharacters.toLocaleString()} character limit for ${speech.modelId}.`);
+          error.statusCode = 413;
+          throw error;
+        }
+
+        const upstreamController = new AbortController();
+        response.once('close', () => {
+          if (!response.writableEnded) upstreamController.abort();
+        });
+        const upstream = await fetchImpl(
+          `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(speech.voiceId)}/stream?output_format=mp3_44100_128&enable_logging=${speech.enableLogging}`,
+          {
+            method: 'POST',
+            signal: upstreamController.signal,
+            headers: {
+              'Content-Type': 'application/json',
+              'xi-api-key': speech.apiKey
+            },
+            body: JSON.stringify({ text, model_id: speech.modelId })
+          }
+        );
+
+        if (!upstream.ok) {
+          const messages = {
+            401: 'ElevenLabs rejected the configured API key.',
+            402: 'The ElevenLabs account does not have enough credits.',
+            422: 'ElevenLabs rejected the selected voice, model, or scene text.',
+            429: 'ElevenLabs is rate-limiting narration requests.'
+          };
+          const error = new Error(messages[upstream.status] || 'ElevenLabs could not generate narration.');
+          error.statusCode = upstream.status === 429 ? 429 : 502;
+          throw error;
+        }
+
+        const audio = Buffer.from(await upstream.arrayBuffer());
+        response.writeHead(200, {
+          'Content-Type': upstream.headers.get('content-type') || 'audio/mpeg',
+          'Content-Length': audio.length,
+          'Cache-Control': 'no-store'
+        });
+        return response.end(audio);
+      }
+
       if (url.pathname === '/api/novels' && request.method === 'GET') {
         return send(response, 200, JSON.stringify(await readCatalog()));
       }
@@ -342,6 +444,7 @@ function createApp({ dataFile = DEFAULT_DATA_FILE, dataDir = path.dirname(dataFi
         throw error;
       }
     } catch (error) {
+      if (error.name === 'AbortError' && (response.destroyed || response.writableEnded)) return;
       const status = error.statusCode || (error instanceof SyntaxError ? 400 : error.message.includes('too large') ? 413 : 500);
       send(response, status, JSON.stringify({ error: status === 500 ? 'Unable to complete the request.' : error.message }));
     }
@@ -357,4 +460,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createApp, normalizeSceneMarkdown, projectToMarkdown, validateProject };
+module.exports = { createApp, normalizeSceneMarkdown, plainTextForSpeech, projectToMarkdown, validateProject };
