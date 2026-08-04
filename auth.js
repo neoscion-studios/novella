@@ -119,7 +119,7 @@ function loginPage({ entraEnabled, error }) {
     <main>
       <div class="mark" aria-hidden="true">N</div>
       <h1>Welcome to Novella</h1>
-      <p>Sign in to open the shared writing workspace.</p>
+      <p>Sign in to open your private writing workspace.</p>
       ${errorMessage}
       <div class="options">${options.join('\n')}</div>
     </main>
@@ -128,7 +128,7 @@ function loginPage({ entraEnabled, error }) {
 }
 
 function loadConfig(overrides = {}) {
-  const tenantId = overrides.tenantId ?? process.env.ENTRA_TENANT_ID ?? '';
+  const tenantId = String(overrides.tenantId ?? process.env.ENTRA_TENANT_ID ?? '').toLowerCase();
   const redirectUri = overrides.redirectUri ?? process.env.ENTRA_REDIRECT_URI ?? '';
   const postLogoutRedirectUri = overrides.postLogoutRedirectUri
     ?? process.env.ENTRA_POST_LOGOUT_REDIRECT_URI
@@ -195,7 +195,14 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
   }
 
   function readSession(request) {
-    if (!config.required) return { provider: 'local', subject: 'local-development' };
+    if (!config.required) return {
+      provider: 'local',
+      subject: 'local:local-development',
+      tenantId: 'local',
+      objectId: 'local-development',
+      name: 'Local development',
+      username: ''
+    };
     const value = parseCookies(request.headers.cookie)[SESSION_COOKIE];
     const payload = verifyPayload(value, config.sessionSecret);
     if (
@@ -296,7 +303,9 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
       idTokenExpected: true
     });
     const claims = tokens.claims();
-    if (!claims || claims.tid !== config.tenantId || typeof claims.oid !== 'string' || typeof claims.sub !== 'string') {
+    const tenantId = typeof claims?.tid === 'string' ? claims.tid.toLowerCase() : '';
+    const objectId = typeof claims?.oid === 'string' ? claims.oid.toLowerCase() : '';
+    if (!claims || tenantId !== config.tenantId || !objectId || typeof claims.sub !== 'string') {
       redirect(response, '/login?error=identity', [clearTransaction]);
       return;
     }
@@ -304,9 +313,9 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
     redirect(response, '/', [
       sessionCookie({
         provider: 'entra',
-        subject: `entra:${claims.tid}:${claims.oid}`,
-        tenantId: claims.tid,
-        objectId: claims.oid,
+        subject: `entra:${tenantId}:${objectId}`,
+        tenantId,
+        objectId,
         name: typeof claims.name === 'string' ? claims.name.slice(0, 200) : '',
         username: typeof claims.preferred_username === 'string' ? claims.preferred_username.slice(0, 320) : ''
       }),

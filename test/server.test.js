@@ -19,7 +19,10 @@ const http = {
         callback();
       },
       address: () => ({ port }),
-      close: () => testApps.delete(port)
+      close: () => {
+        testApps.delete(port);
+        app.close?.();
+      }
     };
   }
 };
@@ -142,7 +145,6 @@ test('proxies scene narration without exposing the API key', async (t) => {
   };
   const server = http.createServer(createApp({
     dataDir: directory,
-    dataFile: path.join(directory, 'project.json'),
     fetchImpl,
     ttsConfig: { apiKey: 'server-secret', voiceId: 'voice-123', modelId: 'eleven_flash_v2_5' }
   }));
@@ -173,7 +175,7 @@ test('proxies scene narration without exposing the API key', async (t) => {
 test('seeds fresh installations with two fictional sample novels', async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'novella-samples-'));
   await fs.cp(path.join(__dirname, '..', 'data', 'samples'), path.join(directory, 'samples'), { recursive: true });
-  const server = http.createServer(createApp({ dataDir: directory, dataFile: path.join(directory, 'project.json') }));
+  const server = http.createServer(createApp({ dataDir: directory }));
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());
 
@@ -190,11 +192,9 @@ test('seeds fresh installations with two fictional sample novels', async (t) => 
   }
 });
 
-test('migrates a legacy project and manages multiple novels through the API', async (t) => {
+test('stores and manages multiple novels in SQLite', async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'novella-test-'));
-  const dataFile = path.join(directory, 'project.json');
-  await fs.writeFile(dataFile, JSON.stringify(sample));
-  const server = http.createServer(createApp({ dataFile }));
+  const server = http.createServer(createApp({ dataDir: directory }));
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());
 
@@ -205,12 +205,12 @@ test('migrates a legacy project and manages multiple novels through the API', as
 
   const catalog = await fetch(`${base}/api/novels`).then((response) => response.json());
   assert.equal(catalog.novels.length, 1);
-  assert.equal(catalog.novels[0].title, 'A Small Story');
+  assert.equal(catalog.novels[0].title, 'Untitled novel');
 
   const firstId = catalog.novels[0].id;
   const initial = await fetch(`${base}/api/novels/${firstId}`).then((response) => response.json());
-  assert.equal(initial.title, 'A Small Story');
-  assert.equal(JSON.parse(await fs.readFile(dataFile, 'utf8')).title, 'A Small Story');
+  assert.equal(initial.title, 'Untitled novel');
+  assert.ok((await fs.stat(path.join(directory, 'novella.sqlite'))).isFile());
 
   const createdResponse = await fetch(`${base}/api/novels`, {
     method: 'POST',

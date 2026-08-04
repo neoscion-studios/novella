@@ -72,17 +72,40 @@ function cookieValue(response, name) {
   return item?.split(';', 1)[0];
 }
 
+function sessionCookieFor(objectId) {
+  const now = Math.floor(Date.now() / 1000);
+  const value = signPayload({
+    v: 1,
+    iat: now,
+    exp: now + 3600,
+    provider: 'entra',
+    subject: `entra:${AUTH_CONFIG.tenantId}:${objectId}`,
+    tenantId: AUTH_CONFIG.tenantId,
+    objectId,
+    name: `User ${objectId}`,
+    username: `${objectId}@example.com`
+  }, AUTH_CONFIG.sessionSecret);
+  return `novella_session=${value}`;
+}
+
 async function startTestApp(options = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'novella-auth-'));
   const app = createApp({
     dataDir: directory,
-    dataFile: path.join(directory, 'project.json'),
     authConfig: AUTH_CONFIG,
     ...options
   });
   const host = `novella-test-${++testAppId}.local`;
   testApps.set(host, app);
-  return { server: { close: () => testApps.delete(host) }, base: `http://${host}` };
+  return {
+    server: {
+      close: () => {
+        testApps.delete(host);
+        app.close?.();
+      }
+    },
+    base: `http://${host}`
+  };
 }
 
 test('signs session payloads and rejects tampering and expiration', () => {
@@ -221,6 +244,54 @@ test('completes Entra code flow with PKCE, state, nonce, and stable tid/oid iden
   assert.equal(logout.status, 303);
   assert.match(logout.headers.get('location'), /^https:\/\/login\.microsoftonline\.com\/logout\?/);
   assert.equal(cookieValue(logout, 'novella_session'), 'novella_session=');
+});
+
+test('isolates every novel operation by Entra tenant and object ID', async (t) => {
+  const { server, base } = await startTestApp();
+  t.after(() => server.close());
+  const firstCookie = sessionCookieFor('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  const secondCookie = sessionCookieFor('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+
+  const createdResponse = await fetch(`${base}/api/novels`, {
+    method: 'POST',
+    headers: {
+      Cookie: firstCookie,
+      Origin: 'http://localhost:4173',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ title: 'First user private novel' })
+  });
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json();
+
+  const firstCatalog = await fetch(`${base}/api/novels`, { headers: { Cookie: firstCookie } }).then((response) => response.json());
+  assert.ok(firstCatalog.novels.some((novel) => novel.id === created.novel.id));
+
+  const secondCatalog = await fetch(`${base}/api/novels`, { headers: { Cookie: secondCookie } }).then((response) => response.json());
+  assert.equal(secondCatalog.novels.some((novel) => novel.id === created.novel.id), false);
+
+  const crossUserRead = await fetch(`${base}/api/novels/${created.novel.id}`, { headers: { Cookie: secondCookie } });
+  assert.equal(crossUserRead.status, 404);
+
+  const crossUserUpdate = await fetch(`${base}/api/novels/${created.novel.id}`, {
+    method: 'PUT',
+    headers: {
+      Cookie: secondCookie,
+      Origin: 'http://localhost:4173',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(created.project)
+  });
+  assert.equal(crossUserUpdate.status, 404);
+
+  const crossUserDelete = await fetch(`${base}/api/novels/${created.novel.id}`, {
+    method: 'DELETE',
+    headers: { Cookie: secondCookie, Origin: 'http://localhost:4173' }
+  });
+  assert.equal(crossUserDelete.status, 404);
+
+  const crossUserExport = await fetch(`${base}/api/novels/${created.novel.id}/export`, { headers: { Cookie: secondCookie } });
+  assert.equal(crossUserExport.status, 404);
 });
 
 test('refuses incomplete production authentication configuration', () => {

@@ -1,6 +1,6 @@
 # Private internet deployment
 
-This deployment runs Novella behind Traefik with application-owned Microsoft Entra ID authentication. Traefik is the only service listening on the host network, and Novella is reachable only through the private Docker network.
+This deployment runs Novella behind Traefik with Microsoft Entra ID authentication. Every Entra identity receives a private SQLite-backed novel library keyed by the immutable combination of tenant ID (`tid`) and object ID (`oid`). Email and display name are metadata only.
 
 ## Requirements
 
@@ -8,9 +8,7 @@ This deployment runs Novella behind Traefik with application-owned Microsoft Ent
 - A DNS record for `novella.neoscion.com` pointing to the host
 - Public inbound TCP ports 80 and 443
 - A single-tenant Microsoft Entra app registration in the Neoscion Studios tenant
-- A private Git repository or another secure way to copy the application to the host
-
-Traefik uses the HTTP-01 Let's Encrypt challenge, so port 80 must remain reachable for certificate renewal.
+- Node.js 24 or newer for development outside Docker
 
 ## 1. Configure Microsoft Entra ID
 
@@ -27,9 +25,9 @@ In the Entra admin center, open the app registration and configure the following
 3. Create a client secret and copy its **Value** into the server's private `.env`. Do not use the secret ID and do not commit or log the value.
 4. Do not enable implicit grant or hybrid flow. Novella uses authorization code flow with PKCE.
 5. Do not add Microsoft Graph permissions. Novella requests only `openid profile email` and does not call Graph.
-6. No optional token claims are required. The `profile` scope supplies the stable `oid` claim; `tid` and `oid` identify the user, while names and email-like claims are display-only.
+6. No optional token claims are required. The `profile` scope supplies `oid`; `tid` and `oid` determine library ownership.
 
-For the safest tenant-wide authorization, enable **Assignment required** on the Enterprise Application and assign only the intended user or group. Until that is enabled, any eligible user in the tenant may be able to sign in. Novella still rejects tokens whose `tid` differs from `ENTRA_TENANT_ID`.
+Enable **Assignment required** on the Enterprise Application and assign the intended users or group when practical. Until then, any eligible user in the tenant can sign in and will receive a separate library.
 
 ## 2. Configure the environment
 
@@ -46,11 +44,12 @@ Generate the session-signing secret:
 openssl rand -base64 48 | tr -d '\n'
 ```
 
-Configure authentication:
+Configure authentication and storage:
 
 ```dotenv
 AUTH_REQUIRED=true
 SESSION_SECRET=replace-with-the-generated-value
+DATABASE_FILE=/app/data/novella.sqlite
 ENTRA_TENANT_ID=your-tenant-guid
 ENTRA_CLIENT_ID=your-application-client-id
 ENTRA_CLIENT_SECRET=your-client-secret-value
@@ -58,24 +57,48 @@ ENTRA_REDIRECT_URI=https://novella.neoscion.com/auth/entra/callback
 ENTRA_POST_LOGOUT_REDIRECT_URI=https://novella.neoscion.com/
 ```
 
-`SESSION_SECRET` signs application sessions and short-lived OIDC transaction cookies. Rotating it is safe but immediately signs out every Novella session.
+Rotating `SESSION_SECRET` immediately signs out every session but does not affect database ownership or manuscript data.
 
-### Optional: ElevenLabs narration
+## 3. Import an existing JSON library
 
-To enable the scene **Listen** button, add the ElevenLabs credentials to `.env`:
+Complete this step before the owner first signs in, so sample records cannot conflict with existing novel IDs.
 
-```dotenv
-ELEVENLABS_API_KEY=your-api-key
-ELEVENLABS_VOICE_ID=your-voice-id
-ELEVENLABS_MODEL_ID=eleven_flash_v2_5
-ELEVENLABS_ENABLE_LOGGING=false
+Find both immutable identifiers in the Entra admin center:
+
+- Tenant ID: **Microsoft Entra ID → Overview → Tenant ID**
+- Object ID: **Microsoft Entra ID → Users → ksmith@neoscion.com → Object ID**
+
+Back up the existing data and build the new image without starting it:
+
+```sh
+tar -czf novella-json-before-sqlite-$(date +%F).tar.gz data/
+docker compose build novella
 ```
 
-The key is passed only to Novella and is never returned to the browser. With logging disabled, Novella requests ElevenLabs zero-retention mode. Scene text still leaves the server for speech generation.
+Import the current `data/catalog.json` and `data/novels/*.json` into the specified identity:
 
-## 3. Validate and deploy
+```sh
+docker compose run --rm --no-deps novella npm run migrate:json -- \
+  --tenant-id <tenant-guid> \
+  --object-id <ksmith-object-guid> \
+  --email ksmith@neoscion.com \
+  --name "K Smith"
+```
 
-Back up `data/` and `.env`, then run:
+The importer:
+
+- uses only tenant ID and object ID for ownership;
+- stores the email and name only for display;
+- imports all records in one SQLite transaction;
+- is safe to rerun when database content is identical;
+- refuses to overwrite a matching novel ID with different content;
+- never changes or deletes the legacy JSON files.
+
+If only the older `data/project.json` exists, it is imported as `legacy-project`.
+
+## 4. Deploy
+
+Validate and start the stack:
 
 ```sh
 docker compose config --quiet
@@ -90,28 +113,35 @@ Follow startup if needed:
 docker compose logs -f traefik novella
 ```
 
-Novella fails fast when required authentication values are missing or the session secret is too short. Novella has no published application port.
+Novella fails fast when authentication values are missing, the session secret is too short, or the database cannot be opened. Port 4173 is not published.
 
-## 4. Verify authentication
+## 5. Verify identity isolation
 
-Use a private browser window:
-
-1. Open `https://novella.neoscion.com/` and confirm it redirects to `/login`.
-2. Choose **Sign in with Microsoft** and confirm Entra returns through `/auth/entra/callback`.
-3. Confirm the existing novels, characters, and locations remain visible and edits persist after refresh.
-4. Restart Novella and confirm the signed session remains valid:
+1. Sign in as `ksmith@neoscion.com` and confirm the imported novels appear.
+2. Open, edit, export, and refresh an imported novel.
+3. Restart Novella and confirm the signed session and library remain available:
 
    ```sh
    docker compose restart novella
    ```
 
-5. Sign out and confirm the local cookie is cleared, Entra logout runs, and Novella returns to the login page.
+4. Sign out and confirm Entra logout returns to `/login`.
+5. If another assigned account is available, sign in with it in a separate private window and confirm it receives samples but cannot see the imported library.
 
-The application stores the stable Entra tenant and object identifiers in the signed session but does not assign manuscripts to individual users. Existing data therefore remains in the same shared workspace; no email-based account matching or data migration occurs.
+All catalog, read, update, export, and delete queries include the authenticated database user ID. A novel ID belonging to another user returns `404` rather than revealing its existence.
 
-## Local Entra testing
+## Local development
 
-Add these Web redirect URIs to the app registration if local testing is desired:
+Install dependencies and start without authentication:
+
+```sh
+npm install
+npm run dev
+```
+
+Open `http://localhost:4173`. Authentication-disabled development uses a fixed local-only identity stored in `data/novella.sqlite`; it does not overlap with an Entra identity.
+
+For local Entra testing, register:
 
 ```text
 http://localhost:4173/auth/entra/callback
@@ -123,6 +153,7 @@ Create an ignored `.env.local` containing:
 ```dotenv
 AUTH_REQUIRED=true
 SESSION_SECRET=generate-a-separate-local-value-of-at-least-32-characters
+DATABASE_FILE=./data/novella.sqlite
 ENTRA_TENANT_ID=your-tenant-guid
 ENTRA_CLIENT_ID=your-application-client-id
 ENTRA_CLIENT_SECRET=your-client-secret-value
@@ -130,35 +161,25 @@ ENTRA_REDIRECT_URI=http://localhost:4173/auth/entra/callback
 ENTRA_POST_LOGOUT_REDIRECT_URI=http://localhost:4173/
 ```
 
-Start Novella without placing credentials on the command line:
+Then run:
 
 ```sh
 node --env-file=.env.local server.js
 ```
 
-Then open `http://localhost:4173`.
+## Backups
 
-Run automated tests with the repository's supported Node runtime:
-
-```sh
-npm test
-```
-
-The OIDC tests use a fake provider and never require or print a real client secret.
-
-## Storage and backups
-
-Novella uses the host's `./data` directory. Back up the entire directory:
+SQLite may use `-wal` and `-shm` companion files while Novella is running. For a simple consistent filesystem backup, briefly stop Novella before copying the database:
 
 ```sh
-tar -czf novella-data-$(date +%F).tar.gz data/
+docker compose stop novella
+cp data/novella.sqlite novella-sqlite-$(date +%F).sqlite
+docker compose start novella
 ```
 
-Also preserve `.env` in encrypted storage and periodically test restoring the novel directory.
+Store the backup and `.env` encrypted outside the host. Keep the original JSON backup until the SQLite migration has been verified and restored in a test environment.
 
 ## Operations
-
-Check service health and the unauthenticated redirect:
 
 ```sh
 docker compose ps
@@ -166,34 +187,41 @@ curl -I https://novella.neoscion.com/
 curl -I https://novella.neoscion.com/api/health
 ```
 
-The first request should redirect to `/login`; the health endpoint remains public for container monitoring and returns only `{"ok":true}`.
+The root request should redirect to `/login`; the public health endpoint returns only `{"ok":true}`.
 
-Apply an application update:
+Apply updates with:
 
 ```sh
 git pull --ff-only
 docker compose up -d --build --remove-orphans
 ```
 
+Run automated tests with:
+
+```sh
+npm test
+```
+
 ## Rollback
 
-Keep the preceding application image or Git revision and a copy of its Compose configuration until the Entra flow is verified. If deployment fails:
+Do not delete the legacy JSON files or their backup during the initial rollout. To roll back before new SQLite-only edits are made:
 
-1. Restore that revision and its Compose configuration.
-2. Restore the previous `.env` from encrypted backup.
-3. Run `docker compose up -d --build --remove-orphans`.
-4. Confirm the prior authentication gate and manuscript access before investigating the failed release.
+1. Stop Novella.
+2. Restore the preceding application revision and Compose configuration.
+3. Restore the preceding `.env`.
+4. Restore the JSON backup if necessary.
+5. Redeploy the preceding revision and verify manuscript access.
 
-Do not delete manuscript data during an authentication rollback.
+If users have edited SQLite-backed novels after migration, preserve `novella.sqlite` before rollback and reconcile those changes rather than discarding the database.
 
 ## Security notes
 
 - Never publish port 4173 directly.
-- Keep `.env` mode `0600`; never commit any of its secrets.
-- Novella uses an `HttpOnly`, `SameSite=Lax`, `Secure` production cookie with an eight-hour default lifetime.
-- State-changing API requests require an exact origin or same-origin browser signal. Logout also uses a session-bound CSRF token so native form submissions remain protected when a browser or proxy omits both headers.
-- Redirect URLs come from configuration rather than untrusted forwarded host or protocol headers.
-- Token signature, issuer, audience, state, nonce, and PKCE checks are handled by `openid-client`; Novella additionally requires the configured `tid` and an `oid`.
-- The application requests no refresh token and stores no Entra tokens in its session cookie.
-- Keep the host firewall limited to SSH, HTTP, and HTTPS.
-- Run only one Novella replica while it uses JSON files for storage.
+- Keep `.env` mode `0600`; never commit secrets or the SQLite database.
+- Library ownership uses only validated `tid` and `oid`; email is never an authorization key.
+- Foreign keys and composite primary keys enforce user ownership in SQLite.
+- Novella uses an `HttpOnly`, `SameSite=Lax`, `Secure` production session cookie.
+- State-changing requests enforce same-origin checks; logout also uses a session-bound CSRF token.
+- `openid-client` validates token signature, issuer, audience, state, nonce, and PKCE; Novella additionally requires the configured tenant and an object ID.
+- The application requests no refresh token and stores no Entra tokens in SQLite or its session cookie.
+- Run only one Novella replica while using the synchronous embedded SQLite connection.

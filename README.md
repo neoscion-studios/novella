@@ -1,20 +1,21 @@
 # Novella
 
-Novella is a local-first novel writing workspace. It stores manuscripts, character notes, and locations in readable JSON files and exports each ordered manuscript as Markdown.
+Novella is a local-first novel writing workspace. It stores each signed-in user's manuscripts, character notes, and locations in SQLite and exports each ordered manuscript as Markdown.
 
 ## Run it
 
-Requires Node.js 20 or newer. No package installation is needed.
+Requires Node.js 24 or newer.
 
 ```sh
+npm install
 npm start
 ```
 
-Open [http://localhost:4173](http://localhost:4173). Use the novel selector above the manuscript title to create, switch, or delete novels. Changes are saved automatically under `data/novels/`, with metadata in `data/catalog.json`.
+Open [http://localhost:4173](http://localhost:4173). Use the novel selector above the manuscript title to create, switch, or delete novels. Changes are saved automatically in `data/novella.sqlite`.
 
-Fresh installations begin with two fictional sample novels from `data/samples/`. The samples are copied into ignored runtime files on first launch, so editing them does not modify the Git repository.
+Each new user begins with two fictional sample novels from `data/samples/`. Editing them changes only that user's database records.
 
-On first launch after upgrading, Novella safely imports the existing `data/project.json` as the first novel and leaves the original file untouched.
+Existing JSON installations must be imported explicitly with `npm run migrate:json`; see the [deployment guide](docs/deployment.md). The importer requires the owner's stable Entra tenant and object IDs and leaves the JSON files untouched.
 
 Scene text supports Markdown. Use the formatting toolbar or `Ctrl/Cmd+B`, `Ctrl/Cmd+I`, and `Ctrl/Cmd+K`, then switch to **Preview** to see the formatted result.
 

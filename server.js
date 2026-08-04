@@ -3,10 +3,11 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { createAuth } = require('./auth');
+const { SqliteStore } = require('./storage');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
-const DEFAULT_DATA_FILE = path.join(ROOT, 'data', 'project.json');
+const DEFAULT_DATA_DIR = path.join(ROOT, 'data');
 const MAX_BODY_SIZE = 5 * 1024 * 1024;
 const TTS_MODEL_LIMITS = {
   eleven_v3: 5000,
@@ -134,16 +135,15 @@ function send(response, status, body, type = 'application/json; charset=utf-8') 
 }
 
 function createApp({
-  dataFile = DEFAULT_DATA_FILE,
-  dataDir = path.dirname(dataFile),
+  dataDir = DEFAULT_DATA_DIR,
+  databaseFile = process.env.DATABASE_FILE || path.join(dataDir, 'novella.sqlite'),
+  store,
   publicDir = PUBLIC_DIR,
   fetchImpl = globalThis.fetch,
   ttsConfig = {},
   authConfig = {},
   oidcFactory
 } = {}) {
-  const catalogFile = path.join(dataDir, 'catalog.json');
-  const novelsDir = path.join(dataDir, 'novels');
   const speech = {
     apiKey: ttsConfig.apiKey ?? process.env.ELEVENLABS_API_KEY ?? '',
     voiceId: ttsConfig.voiceId ?? process.env.ELEVENLABS_VOICE_ID ?? '',
@@ -152,17 +152,8 @@ function createApp({
   };
   speech.maxCharacters = TTS_MODEL_LIMITS[speech.modelId] || 40000;
   const auth = createAuth({ config: authConfig, oidcFactory });
-  let saveQueue = Promise.resolve();
-  let initializationPromise = null;
-
-  const novelFile = (id) => path.join(novelsDir, `${id}.json`);
-
-  async function writeJsonAtomic(file, value) {
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    const temporary = `${file}.tmp`;
-    await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-    await fs.rename(temporary, file);
-  }
+  const library = store || new SqliteStore(databaseFile);
+  let sampleRecordsPromise;
 
   function makeBlankProject(title = 'Untitled novel') {
     return {
@@ -180,146 +171,65 @@ function createApp({
     };
   }
 
-  function validateCatalog(input) {
-    if (!input || !Array.isArray(input.novels)) throw new Error('Novel catalog is invalid.');
-    return {
-      version: 1,
-      novels: input.novels.filter((novel) => /^[a-z0-9-]{1,100}$/i.test(novel?.id)).map((novel) => ({
-        id: novel.id,
-        title: cleanText(novel.title, 'Untitled novel').slice(0, 200),
-        author: cleanText(novel.author).slice(0, 200),
-        createdAt: cleanText(novel.createdAt),
-        updatedAt: cleanText(novel.updatedAt)
-      }))
-    };
-  }
-
-  async function initializeCatalog() {
-    if (!initializationPromise) initializationPromise = (async () => {
+  async function sampleRecords() {
+    if (!sampleRecordsPromise) sampleRecordsPromise = (async () => {
       try {
-        return validateCatalog(JSON.parse(await fs.readFile(catalogFile, 'utf8')));
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-      }
-
-      let firstProject;
-      try {
-        firstProject = validateProject(JSON.parse(await fs.readFile(dataFile, 'utf8')));
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-        const sampleCatalogFile = path.join(dataDir, 'samples', 'catalog.json');
-        try {
-          const sampleCatalog = validateCatalog(JSON.parse(await fs.readFile(sampleCatalogFile, 'utf8')));
-          if (sampleCatalog.novels.length) {
-            for (const summary of sampleCatalog.novels) {
-              const sampleFile = path.join(dataDir, 'samples', 'novels', `${summary.id}.json`);
-              const sampleProject = validateProject(JSON.parse(await fs.readFile(sampleFile, 'utf8')));
-              summary.title = sampleProject.title;
-              summary.author = sampleProject.author;
-              await writeJsonAtomic(novelFile(summary.id), sampleProject);
-            }
-            await writeJsonAtomic(catalogFile, sampleCatalog);
-            return sampleCatalog;
-          }
-        } catch (sampleError) {
-          if (sampleError.code !== 'ENOENT') throw sampleError;
+        const catalog = JSON.parse(await fs.readFile(path.join(dataDir, 'samples', 'catalog.json'), 'utf8'));
+        if (!Array.isArray(catalog.novels)) throw new Error('Sample catalog is invalid.');
+        const records = [];
+        for (const entry of catalog.novels) {
+          if (!/^[a-z0-9-]{1,100}$/i.test(entry?.id)) continue;
+          const project = validateProject(JSON.parse(
+            await fs.readFile(path.join(dataDir, 'samples', 'novels', `${entry.id}.json`), 'utf8')
+          ));
+          const now = new Date().toISOString();
+          records.push({
+            id: entry.id,
+            project,
+            createdAt: cleanText(entry.createdAt, now),
+            updatedAt: cleanText(entry.updatedAt, now)
+          });
         }
-        firstProject = makeBlankProject();
-      }
-
-      const id = `novel-${randomUUID()}`;
-      const now = new Date().toISOString();
-      const catalog = {
-        version: 1,
-        novels: [{ id, title: firstProject.title, author: firstProject.author, createdAt: now, updatedAt: now }]
-      };
-      await writeJsonAtomic(novelFile(id), firstProject);
-      await writeJsonAtomic(catalogFile, catalog);
-      return catalog;
-    })();
-    return initializationPromise;
-  }
-
-  async function readCatalog() {
-    await initializeCatalog();
-    return validateCatalog(JSON.parse(await fs.readFile(catalogFile, 'utf8')));
-  }
-
-  async function readNovel(id) {
-    const catalog = await readCatalog();
-    if (!catalog.novels.some((novel) => novel.id === id)) {
-      const error = new Error('Novel not found.');
-      error.statusCode = 404;
-      throw error;
-    }
-    return validateProject(JSON.parse(await fs.readFile(novelFile(id), 'utf8')));
-  }
-
-  async function queueMutation(callback) {
-    saveQueue = saveQueue.catch(() => {}).then(callback);
-    return saveQueue;
-  }
-
-  async function createNovel(input) {
-    await initializeCatalog();
-    return queueMutation(async () => {
-      const catalog = await readCatalog();
-      const project = makeBlankProject(input?.title);
-      const id = `novel-${randomUUID()}`;
-      const now = new Date().toISOString();
-      const summary = { id, title: project.title, author: project.author, createdAt: now, updatedAt: now };
-      catalog.novels.push(summary);
-      await writeJsonAtomic(novelFile(id), project);
-      await writeJsonAtomic(catalogFile, catalog);
-      return { novel: summary, project };
-    });
-  }
-
-  async function saveNovel(id, input) {
-    await initializeCatalog();
-    const project = validateProject(input);
-    return queueMutation(async () => {
-      const catalog = await readCatalog();
-      const summary = catalog.novels.find((novel) => novel.id === id);
-      if (!summary) {
-        const error = new Error('Novel not found.');
-        error.statusCode = 404;
-        throw error;
-      }
-      summary.title = project.title;
-      summary.author = project.author;
-      summary.updatedAt = new Date().toISOString();
-      await writeJsonAtomic(novelFile(id), project);
-      await writeJsonAtomic(catalogFile, catalog);
-      return { project, novel: summary };
-    });
-  }
-
-  async function deleteNovel(id) {
-    await initializeCatalog();
-    return queueMutation(async () => {
-      const catalog = await readCatalog();
-      const index = catalog.novels.findIndex((novel) => novel.id === id);
-      if (index === -1) {
-        const error = new Error('Novel not found.');
-        error.statusCode = 404;
-        throw error;
-      }
-      if (catalog.novels.length === 1) {
-        const error = new Error('At least one novel must remain.');
-        error.statusCode = 409;
-        throw error;
-      }
-      catalog.novels.splice(index, 1);
-      await writeJsonAtomic(catalogFile, catalog);
-      await fs.unlink(novelFile(id)).catch((error) => {
+        if (records.length) return records;
+      } catch (error) {
         if (error.code !== 'ENOENT') throw error;
-      });
-      return catalog;
-    });
+      }
+      const now = new Date().toISOString();
+      return [{ id: `novel-${randomUUID()}`, project: makeBlankProject(), createdAt: now, updatedAt: now }];
+    })();
+    return sampleRecordsPromise;
   }
 
-  return async function app(request, response) {
+  async function ensureLibrary(identity) {
+    if (library.count(identity) === 0) library.seedIfEmpty(identity, await sampleRecords());
+  }
+
+  async function readCatalog(identity) {
+    await ensureLibrary(identity);
+    return library.catalog(identity);
+  }
+
+  async function readNovel(identity, id) {
+    await ensureLibrary(identity);
+    return validateProject(library.read(identity, id));
+  }
+
+  async function createNovel(identity, input) {
+    await ensureLibrary(identity);
+    return library.create(identity, makeBlankProject(input?.title));
+  }
+
+  async function saveNovel(identity, id, input) {
+    await ensureLibrary(identity);
+    return library.save(identity, id, validateProject(input));
+  }
+
+  async function deleteNovel(identity, id) {
+    await ensureLibrary(identity);
+    return library.delete(identity, id);
+  }
+
+  const app = async function app(request, response) {
     try {
       const url = new URL(request.url, 'http://localhost');
 
@@ -421,17 +331,17 @@ function createApp({
       }
 
       if (url.pathname === '/api/novels' && request.method === 'GET') {
-        return send(response, 200, JSON.stringify(await readCatalog()));
+        return send(response, 200, JSON.stringify(await readCatalog(session)));
       }
 
       if (url.pathname === '/api/novels' && request.method === 'POST') {
         const body = await readBody(request);
-        return send(response, 201, JSON.stringify(await createNovel(body ? JSON.parse(body) : {})));
+        return send(response, 201, JSON.stringify(await createNovel(session, body ? JSON.parse(body) : {})));
       }
 
       const novelRoute = url.pathname.match(/^\/api\/novels\/([a-z0-9-]+)(\/export)?$/i);
       if (novelRoute && novelRoute[2] && request.method === 'GET') {
-        const project = await readNovel(novelRoute[1]);
+        const project = await readNovel(session, novelRoute[1]);
         const filename = (project.title || 'manuscript').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
         response.writeHead(200, {
           'Content-Type': 'text/markdown; charset=utf-8',
@@ -442,15 +352,15 @@ function createApp({
       }
 
       if (novelRoute && !novelRoute[2] && request.method === 'GET') {
-        return send(response, 200, JSON.stringify(await readNovel(novelRoute[1])));
+        return send(response, 200, JSON.stringify(await readNovel(session, novelRoute[1])));
       }
 
       if (novelRoute && !novelRoute[2] && request.method === 'PUT') {
-        return send(response, 200, JSON.stringify(await saveNovel(novelRoute[1], JSON.parse(await readBody(request)))));
+        return send(response, 200, JSON.stringify(await saveNovel(session, novelRoute[1], JSON.parse(await readBody(request)))));
       }
 
       if (novelRoute && !novelRoute[2] && request.method === 'DELETE') {
-        return send(response, 200, JSON.stringify(await deleteNovel(novelRoute[1])));
+        return send(response, 200, JSON.stringify(await deleteNovel(session, novelRoute[1])));
       }
 
       if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -480,15 +390,26 @@ function createApp({
       send(response, status, JSON.stringify({ error: status === 500 ? 'Unable to complete the request.' : error.message }));
     }
   };
+  app.close = () => library.close?.();
+  return app;
 }
 
 if (require.main === module) {
   const port = Number(process.env.PORT) || 4173;
   const host = process.env.HOST || '127.0.0.1';
-  const server = http.createServer(createApp());
+  const app = createApp();
+  const server = http.createServer(app);
   server.listen(port, host, () => {
     console.log(`Novella is ready on http://${host}:${port}`);
   });
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    server.close(() => app.close());
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 module.exports = { createApp, normalizeSceneMarkdown, plainTextForSpeech, projectToMarkdown, validateProject };
