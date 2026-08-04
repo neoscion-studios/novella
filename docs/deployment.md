@@ -5,21 +5,21 @@ This deployment runs Novella behind Traefik with Microsoft Entra ID authenticati
 ## Requirements
 
 - A Linux host with Docker Engine and Docker Compose v2
-- A DNS record for `novella.neoscion.com` pointing to the host
+- A DNS record for `novella.example.com` pointing to the host
 - Public inbound TCP ports 80 and 443
-- A single-tenant Microsoft Entra app registration in the Neoscion Studios tenant
+- A single-tenant Microsoft Entra app registration in your organization's tenant
 - Node.js 24 or newer for development outside Docker
 
 ## 1. Configure Microsoft Entra ID
 
 In the Entra admin center, open the app registration and configure the following:
 
-1. Leave **Supported account types** set to accounts in the Neoscion Studios directory only.
+1. Leave **Supported account types** set to accounts in this organizational directory only.
 2. Under **Authentication**, add these **Web** redirect URIs:
 
    ```text
-   https://novella.neoscion.com/auth/entra/callback
-   https://novella.neoscion.com/
+   https://novella.example.com/auth/entra/callback
+   https://novella.example.com/
    ```
 
 3. Create a client secret and copy its **Value** into the server's private `.env`. Do not use the secret ID and do not commit or log the value.
@@ -53,8 +53,8 @@ DATABASE_FILE=/app/data/novella.sqlite
 ENTRA_TENANT_ID=your-tenant-guid
 ENTRA_CLIENT_ID=your-application-client-id
 ENTRA_CLIENT_SECRET=your-client-secret-value
-ENTRA_REDIRECT_URI=https://novella.neoscion.com/auth/entra/callback
-ENTRA_POST_LOGOUT_REDIRECT_URI=https://novella.neoscion.com/
+ENTRA_REDIRECT_URI=https://novella.example.com/auth/entra/callback
+ENTRA_POST_LOGOUT_REDIRECT_URI=https://novella.example.com/
 ```
 
 Rotating `SESSION_SECRET` immediately signs out every session but does not affect database ownership or manuscript data.
@@ -66,7 +66,7 @@ Complete this step before the owner first signs in, so sample records cannot con
 Find both immutable identifiers in the Entra admin center:
 
 - Tenant ID: **Microsoft Entra ID → Overview → Tenant ID**
-- Object ID: **Microsoft Entra ID → Users → ksmith@neoscion.com → Object ID**
+- Object ID: **Microsoft Entra ID → Users → owner@example.com → Object ID**
 
 Back up the existing data and build the new image without starting it:
 
@@ -80,9 +80,9 @@ Import the current `data/catalog.json` and `data/novels/*.json` into the specifi
 ```sh
 docker compose run --rm --no-deps novella npm run migrate:json -- \
   --tenant-id <tenant-guid> \
-  --object-id <ksmith-object-guid> \
-  --email ksmith@neoscion.com \
-  --name "K Smith"
+  --object-id <owner-object-guid> \
+  --email owner@example.com \
+  --name "Example Owner"
 ```
 
 The importer:
@@ -117,7 +117,7 @@ Novella fails fast when authentication values are missing, the session secret is
 
 ## 5. Verify identity isolation
 
-1. Sign in as `ksmith@neoscion.com` and confirm the imported novels appear.
+1. Sign in as `owner@example.com` and confirm the imported novels appear.
 2. Open, edit, export, and refresh an imported novel.
 3. Restart Novella and confirm the signed session and library remain available:
 
@@ -183,8 +183,8 @@ Store the backup and `.env` encrypted outside the host. Keep the original JSON b
 
 ```sh
 docker compose ps
-curl -I https://novella.neoscion.com/
-curl -I https://novella.neoscion.com/api/health
+curl -I https://novella.example.com/
+curl -I https://novella.example.com/api/health
 ```
 
 The root request should redirect to `/login`; the public health endpoint returns only `{"ok":true}`.

@@ -41,8 +41,8 @@ test('imports legacy JSON idempotently into one stable Entra identity', async (t
   const owner = {
     tenantId: '11111111-1111-1111-1111-111111111111',
     objectId: '22222222-2222-2222-2222-222222222222',
-    name: 'K Smith',
-    username: 'ksmith@neoscion.com'
+    name: 'Example Owner',
+    username: 'owner@example.com'
   };
   assert.deepEqual(store.import(owner, records), { imported: 1, skipped: 0 });
   assert.deepEqual(store.import(owner, records), { imported: 0, skipped: 1 });
@@ -64,5 +64,5 @@ test('requires stable Entra GUIDs for migration ownership', () => {
     requireGuid('AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA', '--object-id'),
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
   );
-  assert.throws(() => requireGuid('ksmith@neoscion.com', '--object-id'), /Entra GUID/);
+  assert.throws(() => requireGuid('owner@example.com', '--object-id'), /Entra GUID/);
 });
