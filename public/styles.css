@@ -94,6 +94,11 @@ button { color: inherit; }
 }
 
 .top-actions { display: flex; justify-content: flex-end; align-items: center; gap: 18px; }
+.auth-info { display: flex; align-items: center; gap: 9px; }
+.auth-user { max-width: 150px; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.auth-info form { margin: 0; }
+.logout-button { padding: 3px 0; border: 0; border-bottom: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; }
+.logout-button:hover { border-bottom-color: currentColor; color: var(--ink); }
 .save-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 .save-status.saving .status-dot { background: #d29a3e; animation: pulse 1s infinite; }
@@ -391,7 +396,7 @@ button { color: inherit; }
 
 @media (max-width: 760px) {
   .topbar { grid-template-columns: auto 1fr; height: auto; min-height: 62px; padding: 12px 16px; }
-  .brand span:last-child, .save-status { display: none; }
+  .brand span:last-child, .save-status, .auth-user { display: none; }
   .primary-nav { grid-row: 2; grid-column: 1 / -1; justify-content: center; height: 39px; order: 3; }
   .top-actions { gap: 8px; }
   .export-button { min-height: 36px; padding: 0 11px; }

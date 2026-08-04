@@ -145,6 +145,15 @@ services:
       ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
       ELEVENLABS_MODEL_ID: ${ELEVENLABS_MODEL_ID:-eleven_flash_v2_5}
       ELEVENLABS_ENABLE_LOGGING: ${ELEVENLABS_ENABLE_LOGGING:-false}
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      AUTHENTIK_LOGIN_ENABLED: ${AUTHENTIK_LOGIN_ENABLED:-true}
+      AUTH_PROXY_SECRET: ${AUTH_PROXY_SECRET:?Set AUTH_PROXY_SECRET in .env}
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:?Set ENTRA_TENANT_ID in .env}
+      ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID:?Set ENTRA_CLIENT_ID in .env}
+      ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:?Set ENTRA_CLIENT_SECRET in .env}
+      ENTRA_REDIRECT_URI: ${ENTRA_REDIRECT_URI:?Set ENTRA_REDIRECT_URI in .env}
+      ENTRA_POST_LOGOUT_REDIRECT_URI: ${ENTRA_POST_LOGOUT_REDIRECT_URI:?Set ENTRA_POST_LOGOUT_REDIRECT_URI in .env}
     volumes:
       - ./data:/app/data
     tmpfs:
@@ -161,7 +170,17 @@ services:
       traefik.http.routers.novella.tls: "true"
       traefik.http.routers.novella.tls.certresolver: letsencrypt
       traefik.http.routers.novella.service: novella
-      traefik.http.routers.novella.middlewares: authentik@docker,security-headers@docker
+      traefik.http.routers.novella.middlewares: ${NOVELLA_MIDDLEWARES:-security-headers@docker}
+
+      traefik.http.routers.novella-authentik.rule: Host(`${NOVELLA_HOST:?Set NOVELLA_HOST in .env}`) && Path(`/auth/authentik/login`)
+      traefik.http.routers.novella-authentik.entrypoints: websecure
+      traefik.http.routers.novella-authentik.priority: "50"
+      traefik.http.routers.novella-authentik.tls: "true"
+      traefik.http.routers.novella-authentik.tls.certresolver: letsencrypt
+      traefik.http.routers.novella-authentik.service: novella
+      traefik.http.routers.novella-authentik.middlewares: authentik@docker,novella-auth-proxy@docker,security-headers@docker
+
+      traefik.http.middlewares.novella-auth-proxy.headers.customrequestheaders.X-Novella-Auth-Proxy: ${AUTH_PROXY_SECRET:?Set AUTH_PROXY_SECRET in .env}
 
 networks:
   proxy:

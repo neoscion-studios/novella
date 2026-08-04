@@ -1,5 +1,7 @@
 const app = document.querySelector('#app');
 const saveStatus = document.querySelector('#saveStatus');
+const authInfo = document.querySelector('#authInfo');
+const authUser = document.querySelector('#authUser');
 const toast = document.querySelector('#toast');
 const confirmDialog = document.querySelector('#confirmDialog');
 
@@ -743,12 +745,20 @@ window.addEventListener('beforeunload', (event) => {
 
 async function init() {
   try {
-    const [catalogResponse, ttsResponse] = await Promise.all([
+    const [catalogResponse, ttsResponse, sessionResponse] = await Promise.all([
       fetch('/api/novels'),
-      fetch('/api/tts/config').catch(() => null)
+      fetch('/api/tts/config').catch(() => null),
+      fetch('/api/auth/session').catch(() => null)
     ]);
     if (!catalogResponse.ok) throw new Error('Unable to load novel catalog');
     if (ttsResponse?.ok) ttsConfig = await ttsResponse.json();
+    if (sessionResponse?.ok) {
+      const session = await sessionResponse.json();
+      if (session.required && session.user) {
+        authUser.textContent = session.user.name || session.user.username || 'Signed in';
+        authInfo.hidden = false;
+      }
+    }
     const catalog = await catalogResponse.json();
     novels = catalog.novels;
     const remembered = localStorage.getItem('novella.activeNovelId');

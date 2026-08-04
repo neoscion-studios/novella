@@ -2,6 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { createAuth } = require('./auth');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -137,7 +138,9 @@ function createApp({
   dataDir = path.dirname(dataFile),
   publicDir = PUBLIC_DIR,
   fetchImpl = globalThis.fetch,
-  ttsConfig = {}
+  ttsConfig = {},
+  authConfig = {},
+  oidcFactory
 } = {}) {
   const catalogFile = path.join(dataDir, 'catalog.json');
   const novelsDir = path.join(dataDir, 'novels');
@@ -148,6 +151,7 @@ function createApp({
     enableLogging: String(ttsConfig.enableLogging ?? process.env.ELEVENLABS_ENABLE_LOGGING ?? 'false') === 'true'
   };
   speech.maxCharacters = TTS_MODEL_LIMITS[speech.modelId] || 40000;
+  const auth = createAuth({ config: authConfig, oidcFactory });
   let saveQueue = Promise.resolve();
   let initializationPromise = null;
 
@@ -321,6 +325,32 @@ function createApp({
 
       if (url.pathname === '/api/health' && request.method === 'GET') {
         return send(response, 200, JSON.stringify({ ok: true }));
+      }
+
+      if (await auth.handlePublicRoute(request, response, url)) return;
+
+      const session = auth.readSession(request);
+      if (auth.config.required && !session) {
+        if (url.pathname.startsWith('/api/')) {
+          return send(response, 401, JSON.stringify({ error: 'Authentication required.' }));
+        }
+        response.writeHead(303, { Location: '/login', 'Cache-Control': 'no-store' });
+        return response.end();
+      }
+
+      if (!auth.validMutationOrigin(request)) {
+        return send(response, 403, JSON.stringify({ error: 'Request origin is not allowed.' }));
+      }
+
+      if (url.pathname === '/api/auth/session' && request.method === 'GET') {
+        return send(response, 200, JSON.stringify({
+          required: auth.config.required,
+          user: auth.config.required ? {
+            provider: session.provider,
+            name: session.name || '',
+            username: session.username || ''
+          } : null
+        }));
       }
 
       if (url.pathname === '/api/tts/config' && request.method === 'GET') {

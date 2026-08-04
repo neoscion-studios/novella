@@ -1,11 +1,69 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const { Readable } = require('node:stream');
 const { createApp, plainTextForSpeech, projectToMarkdown, validateProject } = require('../server');
 const { renderMarkdown } = require('../public/markdown');
+
+const testApps = new Map();
+let nextPort = 41000;
+
+const http = {
+  createServer(app) {
+    const port = nextPort++;
+    return {
+      listen(_requestedPort, _host, callback) {
+        testApps.set(port, app);
+        callback();
+      },
+      address: () => ({ port }),
+      close: () => testApps.delete(port)
+    };
+  }
+};
+
+function fetch(input, options = {}) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(input);
+    const app = testApps.get(Number(url.port));
+    if (!app) return reject(new Error(`No test application is registered on port ${url.port}.`));
+    const request = Readable.from(options.body ? [Buffer.from(options.body)] : []);
+    request.url = `${url.pathname}${url.search}`;
+    request.method = options.method || 'GET';
+    request.headers = Object.fromEntries(Object.entries(options.headers || {}).map(([name, value]) => [name.toLowerCase(), value]));
+    let status = 200;
+    let responseHeaders = {};
+    const response = {
+      writableEnded: false,
+      destroyed: false,
+      once: () => response,
+      writeHead(responseStatus, headers = {}) {
+        status = responseStatus;
+        responseHeaders = Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]));
+      },
+      end(value = '') {
+        this.writableEnded = true;
+        const body = Buffer.isBuffer(value) ? value : Buffer.from(value || '');
+        resolve({
+          status,
+          ok: status >= 200 && status < 300,
+          headers: {
+            get: (name) => {
+              const header = responseHeaders[name.toLowerCase()];
+              return Array.isArray(header) ? header.join(', ') : header ?? null;
+            }
+          },
+          text: async () => body.toString('utf8'),
+          json: async () => JSON.parse(body.toString('utf8')),
+          arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength)
+        });
+      }
+    };
+    Promise.resolve(app(request, response)).catch(reject);
+  });
+}
 
 const sample = {
   title: 'A Small Story',

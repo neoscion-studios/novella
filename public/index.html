@@ -20,6 +20,12 @@
           <button class="nav-item" data-view="locations">Locations</button>
         </nav>
         <div class="top-actions">
+          <div id="authInfo" class="auth-info" hidden>
+            <span id="authUser" class="auth-user"></span>
+            <form action="/logout" method="post">
+              <button class="logout-button" type="submit">Sign out</button>
+            </form>
+          </div>
           <span id="saveStatus" class="save-status"><span class="status-dot"></span> Saved</span>
           <a class="export-button" href="/api/export" download>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg>
