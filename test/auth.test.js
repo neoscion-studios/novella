@@ -61,8 +61,6 @@ const AUTH_CONFIG = {
   redirectUri: 'http://localhost:4173/auth/entra/callback',
   postLogoutRedirectUri: 'http://localhost:4173/',
   sessionSecret: 'test-session-secret-that-is-long-enough',
-  authentikEnabled: true,
-  authProxySecret: 'test-proxy-secret-that-is-long-enough',
   secure: false
 };
 
@@ -113,7 +111,6 @@ test('requires authentication while leaving health and login routes public', asy
   assert.equal(login.status, 200);
   const html = await login.text();
   assert.match(html, /Sign in with Microsoft/);
-  assert.match(html, /Sign in with Authentik/);
 });
 
 test('completes Entra code flow with PKCE, state, nonce, and stable tid/oid identity', async (t) => {
@@ -209,34 +206,6 @@ test('completes Entra code flow with PKCE, state, nonce, and stable tid/oid iden
   assert.equal(logout.status, 303);
   assert.match(logout.headers.get('location'), /^https:\/\/login\.microsoftonline\.com\/logout\?/);
   assert.equal(cookieValue(logout, 'novella_session'), 'novella_session=');
-});
-
-test('accepts Authentik identity only through the authenticated proxy handoff', async (t) => {
-  const { server, base } = await startTestApp();
-  t.after(() => server.close());
-
-  const rejected = await fetch(`${base}/auth/authentik/login`, {
-    headers: { 'X-Authentik-Uid': 'legacy-user' }
-  });
-  assert.equal(rejected.status, 401);
-
-  const accepted = await fetch(`${base}/auth/authentik/login`, {
-    headers: {
-      'X-Novella-Auth-Proxy': AUTH_CONFIG.authProxySecret,
-      'X-Authentik-Uid': 'legacy-user',
-      'X-Authentik-Name': 'Legacy Owner'
-    },
-    redirect: 'manual'
-  });
-  assert.equal(accepted.status, 303);
-  assert.equal(accepted.headers.get('location'), '/');
-
-  const sessionCookie = cookieValue(accepted, 'novella_session');
-  const sessionResponse = await fetch(`${base}/api/auth/session`, { headers: { Cookie: sessionCookie } });
-  assert.deepEqual(await sessionResponse.json(), {
-    required: true,
-    user: { provider: 'authentik', name: 'Legacy Owner', username: '' }
-  });
 });
 
 test('refuses incomplete production authentication configuration', () => {

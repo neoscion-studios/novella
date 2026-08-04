@@ -31,4 +31,4 @@ npm test
 
 ## Private deployment
 
-The included [Compose stack](compose.yml) runs Novella behind Traefik and Let's Encrypt with Microsoft Entra ID authentication. Authentik remains available as a temporary second sign-in option during migration. Follow the complete [deployment guide](docs/deployment.md) before exposing the host to the internet.
+The included [Compose stack](compose.yml) runs Novella behind Traefik and Let's Encrypt with Microsoft Entra ID authentication. Follow the complete [deployment guide](docs/deployment.md) before exposing the host to the internet.

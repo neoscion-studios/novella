@@ -4,10 +4,6 @@ const SESSION_COOKIE = 'novella_session';
 const TRANSACTION_COOKIE = 'novella_oidc';
 const DEFAULT_SESSION_TTL_SECONDS = 8 * 60 * 60;
 const TRANSACTION_TTL_SECONDS = 10 * 60;
-const AUTHENTIK_UID_HEADER = 'x-authentik-uid';
-const AUTHENTIK_NAME_HEADER = 'x-authentik-name';
-const AUTHENTIK_USERNAME_HEADER = 'x-authentik-username';
-const AUTH_PROXY_SECRET_HEADER = 'x-novella-auth-proxy';
 
 function parseBoolean(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -80,13 +76,10 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
-function loginPage({ entraEnabled, authentikEnabled, error }) {
+function loginPage({ entraEnabled, error }) {
   const options = [];
   if (entraEnabled) {
     options.push('<a class="button microsoft" href="/auth/entra/login">Sign in with Microsoft</a>');
-  }
-  if (authentikEnabled) {
-    options.push('<a class="button secondary" href="/auth/authentik/login">Sign in with Authentik</a>');
   }
   const errorMessage = error
     ? `<p class="error" role="alert">${escapeHtml(error)}</p>`
@@ -146,8 +139,6 @@ function loadConfig(overrides = {}) {
     redirectUri,
     postLogoutRedirectUri,
     sessionSecret: overrides.sessionSecret ?? process.env.SESSION_SECRET ?? '',
-    authentikEnabled: parseBoolean(overrides.authentikEnabled ?? process.env.AUTHENTIK_LOGIN_ENABLED, false),
-    authProxySecret: overrides.authProxySecret ?? process.env.AUTH_PROXY_SECRET ?? '',
     sessionTtlSeconds,
     secure
   };
@@ -157,9 +148,6 @@ function validateConfig(config) {
   if (!config.required) return;
   if (config.sessionSecret.length < 32) {
     throw new Error('SESSION_SECRET must contain at least 32 characters when authentication is required.');
-  }
-  if (config.authentikEnabled && config.authProxySecret.length < 32) {
-    throw new Error('AUTH_PROXY_SECRET must contain at least 32 characters when Authentik login is enabled.');
   }
   const entraValues = [config.tenantId, config.clientId, config.clientSecret, config.redirectUri, config.postLogoutRedirectUri];
   if (entraValues.some((value) => !value)) {
@@ -203,7 +191,13 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
     if (!config.required) return { provider: 'local', subject: 'local-development' };
     const value = parseCookies(request.headers.cookie)[SESSION_COOKIE];
     const payload = verifyPayload(value, config.sessionSecret);
-    if (payload?.v !== 1 || typeof payload?.subject !== 'string' || typeof payload?.provider !== 'string') return null;
+    if (
+      payload?.v !== 1
+      || payload.provider !== 'entra'
+      || payload.tenantId !== config.tenantId
+      || typeof payload.objectId !== 'string'
+      || payload.subject !== `entra:${config.tenantId}:${payload.objectId}`
+    ) return null;
     return payload;
   }
 
@@ -224,7 +218,7 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
       'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
       'X-Content-Type-Options': 'nosniff'
     });
-    response.end(loginPage({ entraEnabled, authentikEnabled: config.authentikEnabled, error }));
+    response.end(loginPage({ entraEnabled, error }));
   }
 
   async function startEntra(response) {
@@ -293,33 +287,6 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
     ]);
   }
 
-  function finishAuthentik(request, response) {
-    const suppliedSecret = request.headers[AUTH_PROXY_SECRET_HEADER];
-    const expectedSecret = config.authProxySecret;
-    if (typeof suppliedSecret !== 'string' || suppliedSecret.length !== expectedSecret.length) {
-      sendLogin(response, 'The Authentik proxy handoff could not be verified.');
-      return;
-    }
-    const supplied = Buffer.from(suppliedSecret);
-    const expected = Buffer.from(expectedSecret);
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
-      sendLogin(response, 'The Authentik proxy handoff could not be verified.');
-      return;
-    }
-    const uid = request.headers[AUTHENTIK_UID_HEADER];
-    if (typeof uid !== 'string' || !uid.trim()) {
-      sendLogin(response, 'Authentik did not provide a stable user identifier.');
-      return;
-    }
-    const displayName = request.headers[AUTHENTIK_NAME_HEADER] || request.headers[AUTHENTIK_USERNAME_HEADER] || '';
-    redirect(response, '/', [sessionCookie({
-      provider: 'authentik',
-      subject: `authentik:${uid}`,
-      authentikUid: uid.slice(0, 300),
-      name: String(displayName).slice(0, 200)
-    })]);
-  }
-
   async function logout(response, session) {
     const cookies = [clearCookie(SESSION_COOKIE), clearCookie(TRANSACTION_COOKIE)];
     if (session?.provider === 'entra' && entraEnabled) {
@@ -328,11 +295,6 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
         post_logout_redirect_uri: config.postLogoutRedirectUri
       });
       redirect(response, logoutUrl.href, cookies);
-      return;
-    }
-    if (session?.provider === 'authentik' && config.authentikEnabled) {
-      const destination = encodeURIComponent(config.postLogoutRedirectUri || '/');
-      redirect(response, `/outpost.goauthentik.io/sign_out?rd=${destination}`, cookies);
       return;
     }
     redirect(response, config.postLogoutRedirectUri || '/login', cookies);
@@ -373,14 +335,6 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
           await finishEntra(request, response, url);
         } catch {
           redirect(response, '/login?error=failed', [clearCookie(TRANSACTION_COOKIE)]);
-        }
-        return true;
-      }
-      if (url.pathname === '/auth/authentik/login' && request.method === 'GET') {
-        if (!config.authentikEnabled) {
-          sendLogin(response, 'Authentik login is disabled.');
-        } else {
-          finishAuthentik(request, response);
         }
         return true;
       }
