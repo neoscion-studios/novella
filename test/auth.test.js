@@ -175,10 +175,10 @@ test('completes Entra code flow with PKCE, state, nonce, and stable tid/oid iden
   const sessionCookie = cookieValue(callback, 'novella_session');
   const sessionResponse = await fetch(`${base}/api/auth/session`, { headers: { Cookie: sessionCookie } });
   assert.equal(sessionResponse.status, 200);
-  assert.deepEqual(await sessionResponse.json(), {
-    required: true,
-    user: { provider: 'entra', name: 'Novella Owner', username: 'owner@example.com' }
-  });
+  const session = await sessionResponse.json();
+  assert.equal(session.required, true);
+  assert.deepEqual(session.user, { provider: 'entra', name: 'Novella Owner', username: 'owner@example.com' });
+  assert.match(session.csrfToken, /^[A-Za-z0-9_-]{43}$/);
 
   const deniedMutation = await fetch(`${base}/api/novels`, {
     method: 'POST',
@@ -211,7 +211,11 @@ test('completes Entra code flow with PKCE, state, nonce, and stable tid/oid iden
 
   const logout = await fetch(`${base}/logout`, {
     method: 'POST',
-    headers: { Cookie: sessionCookie, 'Sec-Fetch-Site': 'same-origin' },
+    headers: {
+      Cookie: sessionCookie,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: new URLSearchParams({ csrfToken: session.csrfToken }).toString(),
     redirect: 'manual'
   });
   assert.equal(logout.status, 303);

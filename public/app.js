@@ -2,6 +2,7 @@ const app = document.querySelector('#app');
 const saveStatus = document.querySelector('#saveStatus');
 const authInfo = document.querySelector('#authInfo');
 const authUser = document.querySelector('#authUser');
+const csrfToken = document.querySelector('#csrfToken');
 const toast = document.querySelector('#toast');
 const confirmDialog = document.querySelector('#confirmDialog');
 
@@ -756,6 +757,7 @@ async function init() {
       const session = await sessionResponse.json();
       if (session.required && session.user) {
         authUser.textContent = session.user.name || session.user.username || 'Signed in';
+        csrfToken.value = session.csrfToken;
         authInfo.hidden = false;
       }
     }

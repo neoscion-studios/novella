@@ -191,7 +191,7 @@ Do not delete manuscript data during an authentication rollback.
 - Never publish port 4173 directly.
 - Keep `.env` mode `0600`; never commit any of its secrets.
 - Novella uses an `HttpOnly`, `SameSite=Lax`, `Secure` production cookie with an eight-hour default lifetime.
-- State-changing requests require either an exact `Origin` match with `ENTRA_REDIRECT_URI`'s origin or the browser's `Sec-Fetch-Site: same-origin` signal when a native form omits `Origin`.
+- State-changing API requests require an exact origin or same-origin browser signal. Logout also uses a session-bound CSRF token so native form submissions remain protected when a browser or proxy omits both headers.
 - Redirect URLs come from configuration rather than untrusted forwarded host or protocol headers.
 - Token signature, issuer, audience, state, nonce, and PKCE checks are handled by `openid-client`; Novella additionally requires the configured `tid` and an `oid`.
 - The application requests no refresh token and stores no Entra tokens in its session cookie.

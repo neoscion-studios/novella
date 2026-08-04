@@ -48,6 +48,13 @@ function verifyPayload(value, secret, now = Date.now()) {
   }
 }
 
+function safeEqual(value, expected) {
+  if (typeof value !== 'string' || typeof expected !== 'string') return false;
+  const supplied = Buffer.from(value);
+  const wanted = Buffer.from(expected);
+  return supplied.length === wanted.length && timingSafeEqual(supplied, wanted);
+}
+
 function cookie(name, value, { maxAge, secure }) {
   const attributes = [
     `${name}=${value}`,
@@ -207,6 +214,26 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
     return cookie(SESSION_COOKIE, value, { maxAge: config.sessionTtlSeconds, secure: config.secure });
   }
 
+  function csrfToken(session) {
+    if (!session?.subject || !session?.iat || !session?.exp) return '';
+    return createHmac('sha256', config.sessionSecret)
+      .update(`novella-csrf:${session.subject}:${session.iat}:${session.exp}`)
+      .digest('base64url');
+  }
+
+  async function hasValidCsrfToken(request, session) {
+    if (!request.headers['content-type']?.startsWith('application/x-www-form-urlencoded')) return false;
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of request) {
+      size += chunk.length;
+      if (size > 4096) return false;
+      chunks.push(chunk);
+    }
+    const supplied = new URLSearchParams(Buffer.concat(chunks).toString('utf8')).get('csrfToken');
+    return safeEqual(supplied, csrfToken(session));
+  }
+
   function clearCookie(name) {
     return cookie(name, '', { maxAge: 0, secure: config.secure });
   }
@@ -309,6 +336,7 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
   return {
     config,
     readSession,
+    csrfToken,
     validMutationOrigin,
     async handlePublicRoute(request, response, url) {
       if (url.pathname === '/login' && request.method === 'GET') {
@@ -340,11 +368,12 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
         return true;
       }
       if (url.pathname === '/logout' && request.method === 'POST') {
-        if (!validMutationOrigin(request)) {
+        const session = readSession(request);
+        if (!validMutationOrigin(request) && !(await hasValidCsrfToken(request, session))) {
           response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
           response.end(JSON.stringify({ error: 'Request origin is not allowed.' }));
         } else {
-          await logout(response, readSession(request));
+          await logout(response, session);
         }
         return true;
       }

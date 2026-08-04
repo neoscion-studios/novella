@@ -349,7 +349,8 @@ function createApp({
             provider: session.provider,
             name: session.name || '',
             username: session.username || ''
-          } : null
+          } : null,
+          csrfToken: auth.config.required ? auth.csrfToken(session) : ''
         }));
       }
 

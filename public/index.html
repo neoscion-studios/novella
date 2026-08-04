@@ -23,6 +23,7 @@
           <div id="authInfo" class="auth-info" hidden>
             <span id="authUser" class="auth-user"></span>
             <form action="/logout" method="post">
+              <input id="csrfToken" type="hidden" name="csrfToken" value="" />
               <button class="logout-button" type="submit">Sign out</button>
             </form>
           </div>
