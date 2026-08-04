@@ -198,9 +198,20 @@ test('completes Entra code flow with PKCE, state, nonce, and stable tid/oid iden
   });
   assert.equal(allowedMutation.status, 201);
 
+  const rejectedLogout = await fetch(`${base}/logout`, {
+    method: 'POST',
+    headers: {
+      Cookie: sessionCookie,
+      Origin: 'https://attacker.example',
+      'Sec-Fetch-Site': 'same-origin'
+    },
+    redirect: 'manual'
+  });
+  assert.equal(rejectedLogout.status, 403);
+
   const logout = await fetch(`${base}/logout`, {
     method: 'POST',
-    headers: { Cookie: sessionCookie, Origin: 'http://localhost:4173' },
+    headers: { Cookie: sessionCookie, 'Sec-Fetch-Site': 'same-origin' },
     redirect: 'manual'
   });
   assert.equal(logout.status, 303);

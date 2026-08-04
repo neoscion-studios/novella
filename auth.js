@@ -302,7 +302,8 @@ function createAuth({ config: overrides = {}, oidcFactory } = {}) {
 
   function validMutationOrigin(request) {
     if (!config.required || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) return true;
-    return Boolean(publicOrigin && request.headers.origin === publicOrigin);
+    if (request.headers.origin) return Boolean(publicOrigin && request.headers.origin === publicOrigin);
+    return request.headers['sec-fetch-site'] === 'same-origin';
   }
 
   return {
