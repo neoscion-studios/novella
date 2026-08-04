@@ -19,9 +19,11 @@ yarn-error.log*
 data/*.tmp
 data/catalog.json
 data/novels/
+data/project.json
 
 # Editor and operating-system files
 .DS_Store
+._*
 .idea/
 .vscode/
 *.swp
