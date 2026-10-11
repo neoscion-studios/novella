@@ -1,6 +1,6 @@
 # Novella proofreading — implementation specification
 
-Status: Proposed implementation (2026-10-10). This is a bounded proofreading feature, not the future Literary Intelligence system.
+Status: Implemented (2026-10-10). This is a bounded proofreading feature, not the future Literary Intelligence system.
 
 ## Goal
 Provide reliable, private spelling and grammar review sufficient for everyday fiction editing without a Grammarly subscription. Preserve authorial voice, existing Markdown scene editing, and the dependency-light architecture.

@@ -9,6 +9,7 @@ This deployment runs Novella behind Traefik with Microsoft Entra ID authenticati
 - Public inbound TCP ports 80 and 443
 - A single-tenant Microsoft Entra app registration in your organization's tenant
 - Node.js 24 or newer for development outside Docker
+- About 768 MiB of additional memory for the default LanguageTool limit (its Java heap defaults to 256–512 MiB)
 
 ## 1. Configure Microsoft Entra ID
 
@@ -58,6 +59,24 @@ ENTRA_POST_LOGOUT_REDIRECT_URI=https://novella.example.com/
 ```
 
 Rotating `SESSION_SECRET` immediately signs out every session but does not affect database ownership or manuscript data.
+
+Proofreading is enabled in Compose by default:
+
+```dotenv
+PROOFREADING_ENABLED=true
+PROOFREADING_URL=http://languagetool:8010
+PROOFREADING_TIMEOUT_MS=8000
+PROOFREADING_LANGUAGE=en-US
+PROOFREADING_MAX_CONCURRENT=2
+LANGUAGETOOL_JAVA_XMS=256m
+LANGUAGETOOL_JAVA_XMX=512m
+LANGUAGETOOL_MEMORY_LIMIT=768m
+LANGUAGETOOL_CPU_LIMIT=1.0
+```
+
+`PROOFREADING_URL` is a server-only fixed configuration value, never a browser input. Keep it on the internal service URL. Set `PROOFREADING_ENABLED=false` to run Novella without the checker; writing, saving, browser spellcheck, preview, narration, and export continue to work.
+
+The stack pins community-maintained [`erikvl87/languagetool` 6.8](https://hub.docker.com/r/erikvl87/languagetool/tags) by its multi-platform digest. [LanguageTool itself is LGPL-2.1-or-later](https://github.com/languagetool-org/languagetool#license). The image is [one of the community images listed by the upstream LanguageTool project](https://github.com/languagetool-org/languagetool#docker), runs as its unprivileged `languagetool` user, includes a `/v2/check` healthcheck, and [documents a default 256–512 MiB Java heap](https://github.com/Erikvl87/docker-languagetool#java-heap-size). Its startup script appends configuration inside `/LanguageTool` only when `langtool_*` variables are supplied, so this stack deliberately supplies none; the root filesystem can remain read-only and `/tmp` is a small tmpfs. Routine checker logs are reduced to errors with `deployment/languagetool-logback.xml`.
 
 ## 3. Import an existing JSON library
 
@@ -114,6 +133,8 @@ docker compose logs -f traefik novella
 ```
 
 Novella fails fast when authentication values are missing, the session secret is too short, or the database cannot be opened. Port 4173 is not published.
+
+LanguageTool also has no published port and no Traefik labels. Only Novella can reach it through the dedicated `novella_proofreading` network, which Docker marks internal. The checker is not a startup dependency: if it is unhealthy or stopped, proofreading reports a temporary unavailable state while the rest of Novella remains usable.
 
 ## 5. Verify identity isolation
 
@@ -189,6 +210,15 @@ curl -I https://novella.example.com/api/health
 
 The root request should redirect to `/login`; the public health endpoint returns only `{"ok":true}`.
 
+Check the private proofreader without publishing it:
+
+```sh
+docker compose ps languagetool
+docker compose exec novella node -e "fetch('http://languagetool:8010/v2/check',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:'language=en-US&text=This+are+a+test'}).then(r=>console.log(r.status))"
+```
+
+The command should print `200`. Do not include manuscript text in operational checks or logs.
+
 Apply updates with:
 
 ```sh
@@ -225,3 +255,5 @@ If users have edited SQLite-backed novels after migration, preserve `novella.sql
 - `openid-client` validates token signature, issuer, audience, state, nonce, and PKCE; Novella additionally requires the configured tenant and an object ID.
 - The application requests no refresh token and stores no Entra tokens in SQLite or its session cookie.
 - Run only one Novella replica while using the synchronous embedded SQLite connection.
+- Proofreading text is sent only from Novella to the private checker for the duration of a request. Neither service is configured to persist it, routine checker logging is disabled, responses are bounded, and upstream errors are sanitized.
+- The pinned checker image is a community image rather than an official LanguageTool image. Review its release, digest, Dockerfile, license, and security posture before upgrades; update the version and digest together.

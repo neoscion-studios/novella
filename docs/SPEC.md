@@ -156,6 +156,8 @@ The application exposes these principal endpoints:
 - `GET /api/novels/:id/export` downloads its manuscript as Markdown.
 - `GET /api/tts/config` reveals only safe narration capability/model information.
 - `POST /api/tts` synthesizes the supplied scene through the configured provider.
+- `GET /api/proofreading/config` returns only the safe enabled state, configured language, and text limit.
+- `POST /api/proofreading/check` authorizes the supplied novel and scene for the current identity and checks the unsaved Markdown snapshot without saving it.
 
 Unknown API routes return JSON `404` responses. Invalid JSON returns `400`, oversized input returns `413`, and unexpected server failures do not expose secrets.
 
@@ -166,4 +168,16 @@ Unknown API routes return JSON `404` responses. Invalid JSON returns `400`, over
 - Keep server modules testable by injecting storage, authentication/OIDC, filesystem paths, and `fetch` where needed.
 - `npm test` must cover normalization, safe Markdown rendering, export hierarchy, persistence and novel lifecycle, sample seeding, narration proxy behavior, session integrity, Entra flow checks, CSRF/origin controls, cross-user isolation, and migration safety.
 - Never commit secrets, runtime databases, SQLite sidecar files, or local environment files.
+
+## Phase 5: bounded self-hosted proofreading (decision dated 2026-10-10)
+
+- Keep the native Markdown textarea and its Write/Preview behavior; enable native browser spellcheck explicitly and do not introduce contenteditable, an overlay editor, or inline server-generated underlines.
+- Offer user-triggered scene review and sequential chapter review through a provider-neutral server adapter backed initially by self-hosted LanguageTool.
+- Project Markdown to checkable plain text while retaining an exact UTF-16 offset map. Skip fenced and inline code, URLs, link destinations, HTML tags, and Markdown delimiters. Suggestions crossing removed syntax are advisory and cannot be applied automatically.
+- Present categories, excerpts, explanations, replacements, and review-scoped ignore actions. Never rewrite automatically or persist a dictionary in this phase.
+- Bind every review to the exact novel, scene, and source snapshot. Accept only when identity, active context, offsets, and original text still match; use the textarea editing path and input event so autosave remains authoritative.
+- Treat edits, scene/novel changes, and out-of-order responses as stale. A stale suggestion cannot mutate any manuscript.
+- Run LanguageTool in a digest-pinned, unprivileged, read-only container on a dedicated internal Docker network with no host port or Traefik route. Bound requests, responses, concurrency, and timeouts; do not log or persist manuscript text.
+- Support `en-US` initially through server configuration. Checker failure or disablement must not affect editing, saving, narration, preview, or export.
+- Personal dictionaries, continuous/live review, inline decoration, and Literary Intelligence remain future work. Literary Intelligence is context-aware analysis and is not part of mechanical proofreading.
 

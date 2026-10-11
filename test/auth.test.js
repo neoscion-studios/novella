@@ -270,6 +270,22 @@ test('isolates every novel operation by Entra tenant and object ID', async (t) =
   const secondCatalog = await fetch(`${base}/api/novels`, { headers: { Cookie: secondCookie } }).then((response) => response.json());
   assert.equal(secondCatalog.novels.some((novel) => novel.id === created.novel.id), false);
 
+  const sceneId = created.project.chapters[0].scenes[0].id;
+  const crossSiteProofread = await fetch(`${base}/api/proofreading/check`, {
+    method: 'POST',
+    headers: { Cookie: firstCookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId: created.novel.id, sceneId, text: 'Unsaved private text' })
+  });
+  assert.equal(crossSiteProofread.status, 403);
+
+  const ownedProofread = await fetch(`${base}/api/proofreading/check`, {
+    method: 'POST',
+    headers: { Cookie: firstCookie, Origin: 'http://localhost:4173', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId: created.novel.id, sceneId, text: 'Unsaved private text' })
+  });
+  assert.equal(ownedProofread.status, 200);
+  assert.deepEqual(await ownedProofread.json(), { issues: [], status: 'disabled' });
+
   const crossUserRead = await fetch(`${base}/api/novels/${created.novel.id}`, { headers: { Cookie: secondCookie } });
   assert.equal(crossUserRead.status, 404);
 
@@ -292,6 +308,17 @@ test('isolates every novel operation by Entra tenant and object ID', async (t) =
 
   const crossUserExport = await fetch(`${base}/api/novels/${created.novel.id}/export`, { headers: { Cookie: secondCookie } });
   assert.equal(crossUserExport.status, 404);
+
+  const crossUserProofread = await fetch(`${base}/api/proofreading/check`, {
+    method: 'POST',
+    headers: {
+      Cookie: secondCookie,
+      Origin: 'http://localhost:4173',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ novelId: created.novel.id, sceneId, text: 'Private text' })
+  });
+  assert.equal(crossUserProofread.status, 404);
 });
 
 test('refuses incomplete production authentication configuration', () => {

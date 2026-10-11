@@ -17,6 +17,16 @@ let novels = [];
 let activeNovelId = null;
 let ttsConfig = { enabled: false, modelId: '', maxCharacters: 0 };
 let narration = { sceneId: null, state: 'idle', audio: null, objectUrl: null, controller: null };
+let proofreadingConfig = { enabled: false, language: 'en-US', maxTextLength: 100000 };
+let proofreading = {
+  requestSerial: 0,
+  running: false,
+  mode: 'scene',
+  novelId: null,
+  chapterId: null,
+  status: 'idle',
+  reviews: new Map()
+};
 
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const escapeHtml = (value = '') => String(value)
@@ -249,6 +259,78 @@ function renderManuscript() {
   setEditorMode(editorMode);
 }
 
+function resetProofreading() {
+  proofreading.requestSerial += 1;
+  proofreading.running = false;
+  proofreading.mode = 'scene';
+  proofreading.novelId = activeNovelId;
+  proofreading.chapterId = null;
+  proofreading.status = 'idle';
+  proofreading.reviews.clear();
+}
+
+function proofreadingPanelMarkup() {
+  const active = findScene();
+  const reviews = proofreading.mode === 'chapter' && proofreading.chapterId
+    ? (project.chapters.find((chapter) => chapter.id === proofreading.chapterId)?.scenes || [])
+      .map((scene) => proofreading.reviews.get(scene.id)).filter(Boolean)
+    : [proofreading.reviews.get(activeSceneId)].filter(Boolean);
+  const issueCount = reviews.reduce((sum, review) => sum + review.issues.length, 0);
+  const hasReviewErrors = reviews.some((review) => review.error);
+  let body = '';
+  if (!proofreadingConfig.enabled) {
+    body = '<p class="proofreading-empty">Server proofreading is disabled. Browser spellcheck remains available while you write.</p>';
+  } else if (proofreading.running) {
+    body = `<p class="proofreading-empty"><span class="proofreading-spinner" aria-hidden="true"></span> Checking ${proofreading.mode === 'chapter' ? 'chapter scenes' : 'this scene'}…</p>`;
+  } else if (proofreading.status === 'unavailable') {
+    body = '<p class="proofreading-empty">Proofreading is temporarily unavailable. Your writing and browser spellcheck are unaffected.</p>';
+  } else if (proofreading.status === 'changed') {
+    body = '<p class="proofreading-empty">The text changed after this review. Proofread again for current suggestions.</p>';
+  } else if (!reviews.length) {
+    body = '<p class="proofreading-empty">Run a review when you want spelling and grammar suggestions. Nothing changes until you accept one.</p>';
+  } else if (!issueCount && !hasReviewErrors) {
+    body = '<p class="proofreading-empty">No spelling or grammar issues were found.</p>';
+  } else {
+    body = reviews.map((review) => {
+      const found = findScene(review.sceneId);
+      if (!found) return '';
+      if (review.error === 'too-long') return `<section class="proofreading-scene-group">
+        ${proofreading.mode === 'chapter' ? `<h4>${escapeHtml(found.scene.title || 'Untitled scene')}</h4>` : ''}
+        <p class="proofreading-empty">This scene exceeds the ${proofreadingConfig.maxTextLength.toLocaleString()} character proofreading limit.</p>
+      </section>`;
+      if (!review.issues.length) return '';
+      return `<section class="proofreading-scene-group">
+        ${proofreading.mode === 'chapter' ? `<h4>${escapeHtml(found.scene.title || 'Untitled scene')}</h4>` : ''}
+        ${review.issues.map((issue) => `<article class="proofreading-issue" data-proofread-locate="${escapeHtml(issue.id)}" data-proofread-scene="${escapeHtml(review.sceneId)}" tabindex="0">
+          <div class="proofreading-category">${escapeHtml(issue.category)}</div>
+          <p class="proofreading-excerpt">“${escapeHtml(issue.original)}”</p>
+          <p class="proofreading-message">${escapeHtml(issue.message)}</p>
+          <div class="proofreading-actions">
+            ${issue.replacements.map((replacement, index) => `<button data-proofread-accept="${escapeHtml(issue.id)}" data-proofread-scene="${escapeHtml(review.sceneId)}" data-replacement-index="${index}">Accept “${escapeHtml(replacement.value)}”</button>`).join('')}
+            ${!issue.applicable ? '<span class="proofreading-advisory">Advisory only</span>' : ''}
+            <button data-proofread-ignore="${escapeHtml(issue.id)}" data-proofread-scene="${escapeHtml(review.sceneId)}">Ignore</button>
+            <button data-proofread-ignore-scene="${escapeHtml(issue.id)}" data-proofread-scene="${escapeHtml(review.sceneId)}">Ignore in scene</button>
+          </div>
+        </article>`).join('')}
+      </section>`;
+    }).join('');
+  }
+  return `<aside class="proofreading-panel" aria-live="polite" aria-label="Proofreading suggestions">
+    <div class="proofreading-heading"><strong>Proofreading</strong>${issueCount ? `<span>${pluralize(issueCount, 'issue')}</span>` : ''}</div>
+    ${body}
+  </aside>`;
+}
+
+function updateProofreadingPanel() {
+  const panel = document.querySelector('.proofreading-panel');
+  if (panel) panel.outerHTML = proofreadingPanelMarkup();
+  document.querySelectorAll('[data-proofread-scene], [data-proofread-chapter]').forEach((button) => {
+    if (button.tagName === 'BUTTON' && !button.dataset.proofreadAccept && !button.dataset.proofreadIgnore && !button.dataset.proofreadIgnoreScene) {
+      button.disabled = !proofreadingConfig.enabled || proofreading.running;
+    }
+  });
+}
+
 function editorMarkup(chapter, scene) {
   return `
     <article class="editor">
@@ -259,6 +341,8 @@ function editorMarkup(chapter, scene) {
         <div class="scene-tools">
           <span id="editorWordCount">${pluralize(countWords(scene.content), 'word')}</span>
           ${narrationButtonMarkup(scene)}
+          <button class="proofread-button" data-proofread-scene="${escapeHtml(scene.id)}" ${!proofreadingConfig.enabled || proofreading.running ? 'disabled' : ''}>Proofread scene</button>
+          <button class="proofread-button" data-proofread-chapter="${escapeHtml(chapter.id)}" ${!proofreadingConfig.enabled || proofreading.running ? 'disabled' : ''}>Proofread chapter</button>
         </div>
         <button class="delete-link" data-delete-scene="${escapeHtml(scene.id)}">Delete scene</button>
       </div>
@@ -277,7 +361,8 @@ function editorMarkup(chapter, scene) {
           <button class="mode-button ${editorMode === 'preview' ? 'active' : ''}" data-editor-mode="preview">Preview</button>
         </div>
       </div>
-      <textarea class="scene-content ${editorMode === 'preview' ? 'hidden' : ''}" data-scene-field="content" aria-label="Scene content, Markdown supported" placeholder="Begin writing your scene…">${escapeHtml(scene.content)}</textarea>
+      ${proofreadingPanelMarkup()}
+      <textarea class="scene-content ${editorMode === 'preview' ? 'hidden' : ''}" data-scene-field="content" spellcheck="true" aria-label="Scene content, Markdown supported" placeholder="Begin writing your scene…">${escapeHtml(scene.content)}</textarea>
       <div class="markdown-preview ${editorMode === 'preview' ? '' : 'hidden'}" aria-label="Formatted scene preview">
         ${scene.content.trim() ? NovellaMarkdown.renderMarkdown(scene.content) : '<p class="preview-empty">Nothing to preview yet.</p>'}
       </div>
@@ -449,6 +534,7 @@ async function loadNovel(novelId) {
   project = await response.json();
   activeNovelId = novelId;
   activeSceneId = firstSceneId();
+  resetProofreading();
   localStorage.setItem('novella.activeNovelId', novelId);
 }
 
@@ -489,6 +575,7 @@ async function createNovel() {
     project = created.project;
     activeNovelId = created.novel.id;
     activeSceneId = firstSceneId();
+    resetProofreading();
     editorMode = 'write';
     localStorage.setItem('novella.activeNovelId', activeNovelId);
     renderManuscript();
@@ -559,6 +646,130 @@ async function deleteReference(id) {
   scheduleSave();
 }
 
+async function requestProofreading(scene, serial) {
+  const snapshot = scene.content;
+  const novelId = activeNovelId;
+  if (snapshot.length > proofreadingConfig.maxTextLength) {
+    proofreading.reviews.set(scene.id, { novelId, sceneId: scene.id, snapshot, issues: [], error: 'too-long' });
+    proofreading.status = 'available';
+    return true;
+  }
+  try {
+    const response = await fetch('/api/proofreading/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ novelId, sceneId: scene.id, text: snapshot, language: proofreadingConfig.language })
+    });
+    if (!response.ok) throw new Error('Proofreading request failed.');
+    const result = await response.json();
+    if (!NovellaProofreading.responseMatches(serial, proofreading.requestSerial, novelId, activeNovelId)) return false;
+    const current = findScene(scene.id)?.scene;
+    if (!current || current.content !== snapshot) return false;
+    if (result.status !== 'available') {
+      proofreading.status = result.status === 'disabled' ? 'disabled' : 'unavailable';
+      return false;
+    }
+    proofreading.reviews.set(scene.id, {
+      novelId,
+      sceneId: scene.id,
+      snapshot,
+      issues: Array.isArray(result.issues) ? result.issues : []
+    });
+    proofreading.status = 'available';
+    return true;
+  } catch {
+    if (serial === proofreading.requestSerial) proofreading.status = 'unavailable';
+    return false;
+  }
+}
+
+async function proofreadScene(sceneId = activeSceneId) {
+  const found = findScene(sceneId);
+  if (!found || !proofreadingConfig.enabled || proofreading.running) return;
+  const serial = ++proofreading.requestSerial;
+  proofreading.running = true;
+  proofreading.mode = 'scene';
+  proofreading.novelId = activeNovelId;
+  proofreading.chapterId = found.chapter.id;
+  proofreading.status = 'checking';
+  proofreading.reviews.clear();
+  updateProofreadingPanel();
+  await requestProofreading(found.scene, serial);
+  if (serial !== proofreading.requestSerial) return;
+  proofreading.running = false;
+  updateProofreadingPanel();
+}
+
+async function proofreadChapter(chapterId) {
+  const chapter = project.chapters.find((item) => item.id === chapterId);
+  if (!chapter || !proofreadingConfig.enabled || proofreading.running) return;
+  const serial = ++proofreading.requestSerial;
+  proofreading.running = true;
+  proofreading.mode = 'chapter';
+  proofreading.novelId = activeNovelId;
+  proofreading.chapterId = chapter.id;
+  proofreading.status = 'checking';
+  proofreading.reviews.clear();
+  updateProofreadingPanel();
+  for (const scene of chapter.scenes) {
+    if (serial !== proofreading.requestSerial) return;
+    if (!(await requestProofreading(scene, serial)) && proofreading.status === 'unavailable') break;
+  }
+  if (serial !== proofreading.requestSerial) return;
+  proofreading.running = false;
+  updateProofreadingPanel();
+}
+
+function locateProofreadingIssue(sceneId, issueId) {
+  const review = proofreading.reviews.get(sceneId);
+  const issue = review?.issues.find((item) => item.id === issueId);
+  const found = findScene(sceneId);
+  if (!issue || !found) return;
+  if (activeSceneId !== sceneId) {
+    activeSceneId = sceneId;
+    editorMode = 'write';
+    renderManuscript();
+  } else if (editorMode !== 'write') {
+    setEditorMode('write');
+  }
+  requestAnimationFrame(() => {
+    const textarea = document.querySelector('.scene-content');
+    if (!textarea || !NovellaProofreading.reviewMatches(review, activeNovelId, sceneId, textarea.value)) return;
+    textarea.focus();
+    textarea.setSelectionRange(issue.start, issue.end);
+  });
+}
+
+function ignoreProofreadingIssue(sceneId, issueId, throughoutScene = false) {
+  const review = proofreading.reviews.get(sceneId);
+  const issue = review?.issues.find((item) => item.id === issueId);
+  if (!review || !issue) return;
+  review.issues = throughoutScene
+    ? review.issues.filter((item) => !(item.original === issue.original && (item.ruleId || item.message) === (issue.ruleId || issue.message)))
+    : review.issues.filter((item) => item.id !== issueId);
+  updateProofreadingPanel();
+}
+
+function acceptProofreadingIssue(sceneId, issueId, replacementIndex) {
+  const review = proofreading.reviews.get(sceneId);
+  const issue = review?.issues.find((item) => item.id === issueId);
+  const replacement = issue?.replacements?.[replacementIndex]?.value;
+  if (!review || !issue || activeNovelId !== review.novelId) return showToast('This suggestion is no longer current.');
+  if (activeSceneId !== sceneId) {
+    locateProofreadingIssue(sceneId, issueId);
+    return showToast('Review the suggestion in its scene before accepting it.');
+  }
+  const textarea = document.querySelector('.scene-content');
+  if (!NovellaProofreading.applyReplacement(textarea, review, issue, replacement, activeNovelId, activeSceneId)) {
+    proofreading.status = 'changed';
+    proofreading.reviews.delete(sceneId);
+    updateProofreadingPanel();
+    return showToast('The text changed. Proofread again before accepting.');
+  }
+  showToast('Suggestion applied');
+  proofreadScene(sceneId);
+}
+
 document.querySelector('.primary-nav').addEventListener('click', (event) => {
   const button = event.target.closest('[data-view]');
   if (!button) return;
@@ -569,6 +780,18 @@ document.querySelector('.primary-nav').addEventListener('click', (event) => {
 });
 
 app.addEventListener('click', (event) => {
+  const acceptButton = event.target.closest('[data-proofread-accept]');
+  if (acceptButton) return acceptProofreadingIssue(acceptButton.dataset.proofreadScene, acceptButton.dataset.proofreadAccept, Number(acceptButton.dataset.replacementIndex));
+  const ignoreSceneButton = event.target.closest('[data-proofread-ignore-scene]');
+  if (ignoreSceneButton) return ignoreProofreadingIssue(ignoreSceneButton.dataset.proofreadScene, ignoreSceneButton.dataset.proofreadIgnoreScene, true);
+  const ignoreButton = event.target.closest('[data-proofread-ignore]');
+  if (ignoreButton) return ignoreProofreadingIssue(ignoreButton.dataset.proofreadScene, ignoreButton.dataset.proofreadIgnore);
+  const issueCard = event.target.closest('[data-proofread-locate]');
+  if (issueCard) return locateProofreadingIssue(issueCard.dataset.proofreadScene, issueCard.dataset.proofreadLocate);
+  const proofreadSceneButton = event.target.closest('button[data-proofread-scene]');
+  if (proofreadSceneButton) return proofreadScene(proofreadSceneButton.dataset.proofreadScene);
+  const proofreadChapterButton = event.target.closest('[data-proofread-chapter]');
+  if (proofreadChapterButton) return proofreadChapter(proofreadChapterButton.dataset.proofreadChapter);
   const listenButton = event.target.closest('[data-listen-scene]');
   if (listenButton) return toggleNarration(listenButton.dataset.listenScene);
   const formatButton = event.target.closest('[data-format]');
@@ -626,6 +849,14 @@ app.addEventListener('input', (event) => {
       if (label) label.textContent = input.value || 'Untitled scene';
     }
     if (input.dataset.sceneField === 'content') {
+      const existingReview = proofreading.reviews.get(found.scene.id);
+      if (existingReview && existingReview.snapshot !== input.value) {
+        proofreading.requestSerial += 1;
+        proofreading.running = false;
+        proofreading.status = 'changed';
+        proofreading.reviews.delete(found.scene.id);
+        updateProofreadingPanel();
+      }
       if (narration.sceneId === found.scene.id) discardNarration();
       const count = countWords(input.value);
       const editorCount = document.querySelector('#editorWordCount');
@@ -644,6 +875,12 @@ app.addEventListener('input', (event) => {
 });
 
 app.addEventListener('keydown', (event) => {
+  const proofreadIssue = event.target.closest?.('[data-proofread-locate]');
+  if (proofreadIssue && (event.key === 'Enter' || event.key === ' ')) {
+    event.preventDefault();
+    locateProofreadingIssue(proofreadIssue.dataset.proofreadScene, proofreadIssue.dataset.proofreadLocate);
+    return;
+  }
   if (event.target.matches('.scene-content') && (event.metaKey || event.ctrlKey)) {
     const shortcut = { b: 'bold', i: 'italic', k: 'link' }[event.key.toLowerCase()];
     if (shortcut) {
@@ -746,13 +983,15 @@ window.addEventListener('beforeunload', (event) => {
 
 async function init() {
   try {
-    const [catalogResponse, ttsResponse, sessionResponse] = await Promise.all([
+    const [catalogResponse, ttsResponse, proofreadingResponse, sessionResponse] = await Promise.all([
       fetch('/api/novels'),
       fetch('/api/tts/config').catch(() => null),
+      fetch('/api/proofreading/config').catch(() => null),
       fetch('/api/auth/session').catch(() => null)
     ]);
     if (!catalogResponse.ok) throw new Error('Unable to load novel catalog');
     if (ttsResponse?.ok) ttsConfig = await ttsResponse.json();
+    if (proofreadingResponse?.ok) proofreadingConfig = await proofreadingResponse.json();
     if (sessionResponse?.ok) {
       const session = await sessionResponse.json();
       if (session.required && session.user) {

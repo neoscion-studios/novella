@@ -4,11 +4,13 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { createAuth } = require('./auth');
 const { SqliteStore } = require('./storage');
+const { createLanguageToolAdapter } = require('./proofreading/languagetool-adapter');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DEFAULT_DATA_DIR = path.join(ROOT, 'data');
 const MAX_BODY_SIZE = 5 * 1024 * 1024;
+const MAX_PROOFREADING_TEXT = 100000;
 const TTS_MODEL_LIMITS = {
   eleven_v3: 5000,
   eleven_multilingual_v2: 10000,
@@ -141,6 +143,8 @@ function createApp({
   publicDir = PUBLIC_DIR,
   fetchImpl = globalThis.fetch,
   ttsConfig = {},
+  proofreadingConfig = {},
+  proofreadingAdapter,
   authConfig = {},
   oidcFactory
 } = {}) {
@@ -151,6 +155,31 @@ function createApp({
     enableLogging: String(ttsConfig.enableLogging ?? process.env.ELEVENLABS_ENABLE_LOGGING ?? 'false') === 'true'
   };
   speech.maxCharacters = TTS_MODEL_LIMITS[speech.modelId] || 40000;
+  const proofreading = {
+    enabled: String(proofreadingConfig.enabled ?? process.env.PROOFREADING_ENABLED ?? 'false') === 'true',
+    url: proofreadingConfig.url ?? process.env.PROOFREADING_URL ?? 'http://languagetool:8010',
+    timeoutMs: Number(proofreadingConfig.timeoutMs ?? process.env.PROOFREADING_TIMEOUT_MS ?? 8000),
+    language: proofreadingConfig.language ?? process.env.PROOFREADING_LANGUAGE ?? 'en-US',
+    maxConcurrent: Number(proofreadingConfig.maxConcurrent ?? process.env.PROOFREADING_MAX_CONCURRENT ?? 2)
+  };
+  const proofreadingConfigurationValid = (
+    Number.isInteger(proofreading.timeoutMs) && proofreading.timeoutMs >= 250 && proofreading.timeoutMs <= 30000
+    && Number.isInteger(proofreading.maxConcurrent) && proofreading.maxConcurrent >= 1 && proofreading.maxConcurrent <= 8
+    && /^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(proofreading.language)
+  );
+  let proofreader = proofreadingAdapter || null;
+  if (!proofreader && proofreading.enabled && proofreadingConfigurationValid) {
+    try {
+      proofreader = createLanguageToolAdapter({
+        url: proofreading.url,
+        fetchImpl,
+        timeoutMs: proofreading.timeoutMs,
+        maxConcurrent: proofreading.maxConcurrent
+      });
+    } catch {
+      proofreader = null;
+    }
+  }
   const auth = createAuth({ config: authConfig, oidcFactory });
   const library = store || new SqliteStore(databaseFile);
   let sampleRecordsPromise;
@@ -270,6 +299,59 @@ function createApp({
           modelId: speech.modelId,
           maxCharacters: speech.maxCharacters
         }));
+      }
+
+      if (url.pathname === '/api/proofreading/config' && request.method === 'GET') {
+        return send(response, 200, JSON.stringify({
+          enabled: proofreading.enabled,
+          language: proofreading.language,
+          maxTextLength: MAX_PROOFREADING_TEXT
+        }));
+      }
+
+      if (url.pathname === '/api/proofreading/check' && request.method === 'POST') {
+        const input = JSON.parse(await readBody(request));
+        if (!input || typeof input !== 'object' || Array.isArray(input)) {
+          const error = new Error('Proofreading request must be a JSON object.');
+          error.statusCode = 400;
+          throw error;
+        }
+        const novelId = cleanText(input.novelId);
+        const sceneId = cleanText(input.sceneId);
+        const text = input.text;
+        const language = input.language ?? proofreading.language;
+        if (!/^[a-z0-9-]{1,100}$/i.test(novelId) || !sceneId || sceneId.length > 100 || typeof text !== 'string') {
+          const error = new Error('A valid novel, scene, and text are required.');
+          error.statusCode = 400;
+          throw error;
+        }
+        if (text.length > MAX_PROOFREADING_TEXT) {
+          const error = new Error(`Scene text exceeds the ${MAX_PROOFREADING_TEXT.toLocaleString()} character proofreading limit.`);
+          error.statusCode = 413;
+          throw error;
+        }
+        if (language !== proofreading.language) {
+          const error = new Error(`Only ${proofreading.language} proofreading is configured.`);
+          error.statusCode = 400;
+          throw error;
+        }
+        const ownedProject = await readNovel(session, novelId);
+        const sceneExists = ownedProject.chapters.some((chapter) => chapter.scenes.some((scene) => scene.id === sceneId));
+        if (!sceneExists) {
+          const error = new Error('Novel not found.');
+          error.statusCode = 404;
+          throw error;
+        }
+        if (!proofreading.enabled) {
+          return send(response, 200, JSON.stringify({ issues: [], status: 'disabled' }));
+        }
+        if (!proofreader) return send(response, 200, JSON.stringify({ issues: [], status: 'unavailable' }));
+        try {
+          const issues = await proofreader.check({ text, language });
+          return send(response, 200, JSON.stringify({ issues, status: 'available' }));
+        } catch {
+          return send(response, 200, JSON.stringify({ issues: [], status: 'unavailable' }));
+        }
       }
 
       if (url.pathname === '/api/tts' && request.method === 'POST') {

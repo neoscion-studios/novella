@@ -247,7 +247,7 @@ button { color: inherit; }
 }
 .scene-synopsis-input { width: 100%; padding: 0 0 24px; border: 0; border-bottom: 1px solid var(--line); outline: 0; resize: none; background: transparent; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .editor-meta { display: flex; justify-content: space-between; align-items: center; padding: 13px 0 25px; color: var(--soft); font-size: 11px; }
-.scene-tools { display: flex; align-items: center; gap: 14px; }
+.scene-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
 .listen-button {
   display: inline-flex;
   align-items: center;
@@ -267,6 +267,19 @@ button { color: inherit; }
 .listen-button.playing { border-color: #d6b5a8; color: var(--accent-dark); background: var(--accent-soft); }
 .listen-icon { display: inline-grid; place-items: center; width: 12px; font-size: 10px; }
 .listen-button.loading .listen-icon { animation: spin .85s linear infinite; }
+.proofread-button {
+  min-height: 29px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--white);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+.proofread-button:hover:not(:disabled) { border-color: #d6b5a8; color: var(--accent-dark); background: var(--accent-soft); }
+.proofread-button:disabled { cursor: not-allowed; opacity: .45; }
 .delete-link { padding: 3px 0; border: 0; background: transparent; color: var(--soft); cursor: pointer; font-size: 11px; }
 .delete-link:hover { color: #ad4033; }
 .markdown-toolbar {
@@ -307,6 +320,30 @@ button { color: inherit; }
 .toolbar-divider { width: 1px; height: 19px; margin: 0 4px; background: var(--line); }
 .mode-button { min-width: auto; padding: 0 10px; font-family: var(--sans); font-size: 11px; font-weight: 600; }
 .mode-button.active { background: var(--accent-soft); color: var(--accent-dark); }
+.proofreading-panel {
+  margin: -8px 0 24px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255,255,255,.72);
+}
+.proofreading-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 11px; font-size: 12px; }
+.proofreading-heading span { color: var(--soft); font-size: 10px; font-weight: 500; }
+.proofreading-empty { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.proofreading-spinner { display: inline-block; width: 11px; height: 11px; margin-right: 6px; border: 1px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; }
+.proofreading-scene-group + .proofreading-scene-group { margin-top: 17px; padding-top: 15px; border-top: 1px solid var(--line); }
+.proofreading-scene-group h4 { margin: 0 0 9px; color: var(--muted); font-size: 11px; }
+.proofreading-issue { padding: 11px; border-radius: 8px; background: var(--paper); outline: 0; }
+.proofreading-issue + .proofreading-issue { margin-top: 7px; }
+.proofreading-issue:focus { box-shadow: 0 0 0 2px var(--accent-soft); }
+.proofreading-category { color: var(--accent-dark); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.proofreading-excerpt { margin: 5px 0 3px; font-family: var(--serif); font-size: 14px; }
+.proofreading-message { margin: 0 0 9px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.proofreading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.proofreading-actions button { padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--white); color: var(--muted); cursor: pointer; font-size: 10px; }
+.proofreading-actions button:first-child { border-color: #d6b5a8; color: var(--accent-dark); }
+.proofreading-actions button:hover { background: var(--accent-soft); color: var(--ink); }
+.proofreading-advisory { color: var(--soft); font-size: 10px; font-style: italic; }
 .scene-content {
   width: 100%;
   height: 62vh;
@@ -405,6 +442,7 @@ button { color: inherit; }
   .outline-list { max-height: 190px; }
   .editor-area { padding: 35px 22px 60px; }
   .editor-breadcrumb { margin-bottom: 22px; }
+  .editor-meta { align-items: flex-start; gap: 12px; }
   .scene-content { height: 60vh; min-height: 320px; }
   .library-page { width: min(100% - 32px, 1120px); padding-top: 35px; }
   .library-header { align-items: flex-start; flex-direction: column; }

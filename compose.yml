@@ -58,6 +58,11 @@ services:
       ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
       ELEVENLABS_MODEL_ID: ${ELEVENLABS_MODEL_ID:-eleven_flash_v2_5}
       ELEVENLABS_ENABLE_LOGGING: ${ELEVENLABS_ENABLE_LOGGING:-false}
+      PROOFREADING_ENABLED: ${PROOFREADING_ENABLED:-true}
+      PROOFREADING_URL: ${PROOFREADING_URL:-http://languagetool:8010}
+      PROOFREADING_TIMEOUT_MS: ${PROOFREADING_TIMEOUT_MS:-8000}
+      PROOFREADING_LANGUAGE: ${PROOFREADING_LANGUAGE:-en-US}
+      PROOFREADING_MAX_CONCURRENT: ${PROOFREADING_MAX_CONCURRENT:-2}
       AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
       DATABASE_FILE: ${DATABASE_FILE:-/app/data/novella.sqlite}
@@ -72,6 +77,7 @@ services:
       - /tmp:size=16m,mode=1777
     networks:
       - proxy
+      - proofreading
     labels:
       traefik.enable: "true"
       traefik.docker.network: novella_proxy
@@ -90,9 +96,40 @@ services:
       traefik.http.middlewares.security-headers.headers.referrerpolicy: no-referrer
       traefik.http.middlewares.security-headers.headers.permissionspolicy: camera=(), microphone=(), geolocation=()
 
+  languagetool:
+    image: erikvl87/languagetool:6.8@sha256:ef8fa12cbd485166c9ceeb7139d76d56d07707a624da6bb1fc1fbb5411750527
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      Java_Xms: ${LANGUAGETOOL_JAVA_XMS:-256m}
+      Java_Xmx: ${LANGUAGETOOL_JAVA_XMX:-512m}
+    volumes:
+      - ./deployment/languagetool-logback.xml:/LanguageTool/logback.xml:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - proofreading
+    mem_limit: ${LANGUAGETOOL_MEMORY_LIMIT:-768m}
+    cpus: ${LANGUAGETOOL_CPU_LIMIT:-1.0}
+    pids_limit: 128
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --show-error, --data, language=en-US&text=health, http://localhost:8010/v2/check]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
 networks:
   proxy:
     name: novella_proxy
+  proofreading:
+    name: novella_proofreading
+    internal: true
 
 volumes:
   traefik_certificates:
