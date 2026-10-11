@@ -1,6 +1,6 @@
 # Novella proofreading — implementation specification
 
-Status: Phase 1 implemented (2026-10-10); Phase 2 specified below, not yet implemented. This is a bounded proofreading feature, not the future Literary Intelligence system.
+Status: Phases 1 and 2 implemented (2026-10-10). This is a bounded proofreading feature, not the future Literary Intelligence system.
 
 ## Goal
 Provide reliable, private spelling and grammar review sufficient for everyday fiction editing without a Grammarly subscription. Preserve authorial voice, existing Markdown scene editing, and the dependency-light architecture.
@@ -73,7 +73,7 @@ Provide reliable, private spelling and grammar review sufficient for everyday fi
 ## Phase 1 non-goals
 - No LLM, plot analysis, automatic rewrites, global dictionary, replacement of the existing editor, or new frontend framework in Phase 1.
 
-## Phase 2 — Author dictionaries and review improvements (planned)
+## Phase 2 — Author dictionaries and review improvements (implemented)
 
 ### Objective and scope
 Make proofreading dependable for fiction without turning Novella into a rich-text editor or an AI rewriting tool. Build on the working Phase 1 implementation rather than replacing it. Read the current source, tests, and `AGENTS.md` before coding; verify which Phase 1 features are already present. Keep this phase bounded to dictionaries, review reliability, chapter workflow, and diagnostics. Do **not** implement Literary Intelligence, background/live checking, or inline decorations.

@@ -25,8 +25,11 @@ let proofreading = {
   novelId: null,
   chapterId: null,
   status: 'idle',
-  reviews: new Map()
+  reviews: new Map(),
+  selected: null,
+  progress: { completed: 0, total: 0 }
 };
+let dictionaries = { novelId: null, author: [], novel: [], open: false, loading: false, loaded: false, error: '' };
 
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const escapeHtml = (value = '') => String(value)
@@ -267,10 +270,33 @@ function resetProofreading() {
   proofreading.chapterId = null;
   proofreading.status = 'idle';
   proofreading.reviews.clear();
+  proofreading.selected = null;
+  proofreading.progress = { completed: 0, total: 0 };
+  dictionaries = { novelId: activeNovelId, author: [], novel: [], open: false, loading: false, loaded: false, error: '' };
+}
+
+function dictionaryManagerMarkup() {
+  if (!dictionaries.open) return '';
+  if (dictionaries.loading) return '<div class="dictionary-manager"><p class="proofreading-empty">Loading dictionaries…</p></div>';
+  const list = (scope, entries) => `<section class="dictionary-scope"><h4>${scope === 'author' ? 'Author dictionary' : 'Novel dictionary'}</h4>
+    ${entries.length ? `<ul>${entries.map((item) => `<li><span>${escapeHtml(item.entry)}</span><button data-dictionary-remove="${escapeHtml(item.entry)}" data-dictionary-scope="${scope}" aria-label="Remove ${escapeHtml(item.entry)} from ${scope} dictionary">Remove</button></li>`).join('')}</ul>` : '<p class="proofreading-empty">No words yet.</p>'}
+  </section>`;
+  return `<div class="dictionary-manager">
+    <form data-dictionary-form>
+      <label for="dictionaryEntry">Add a word</label>
+      <div class="dictionary-form-row">
+        <input id="dictionaryEntry" name="entry" maxlength="80" autocomplete="off" required placeholder="Invented word" />
+        <select name="scope" aria-label="Dictionary scope"><option value="novel">This novel</option><option value="author">All my novels</option></select>
+        <button type="submit">Add</button>
+      </div>
+      <p>Matching is case-insensitive and exact. Single words may contain letters, apostrophes, or hyphens.</p>
+    </form>
+    ${dictionaries.error ? `<p class="dictionary-error" role="alert">${escapeHtml(dictionaries.error)}</p>` : ''}
+    <div class="dictionary-lists">${list('novel', dictionaries.novel)}${list('author', dictionaries.author)}</div>
+  </div>`;
 }
 
 function proofreadingPanelMarkup() {
-  const active = findScene();
   const reviews = proofreading.mode === 'chapter' && proofreading.chapterId
     ? (project.chapters.find((chapter) => chapter.id === proofreading.chapterId)?.scenes || [])
       .map((scene) => proofreading.reviews.get(scene.id)).filter(Boolean)
@@ -281,9 +307,15 @@ function proofreadingPanelMarkup() {
   if (!proofreadingConfig.enabled) {
     body = '<p class="proofreading-empty">Server proofreading is disabled. Browser spellcheck remains available while you write.</p>';
   } else if (proofreading.running) {
-    body = `<p class="proofreading-empty"><span class="proofreading-spinner" aria-hidden="true"></span> Checking ${proofreading.mode === 'chapter' ? 'chapter scenes' : 'this scene'}…</p>`;
+    const progress = proofreading.mode === 'chapter' && proofreading.progress.total
+      ? ` ${proofreading.progress.completed} of ${proofreading.progress.total} scenes complete.`
+      : '';
+    body = `<p class="proofreading-empty"><span class="proofreading-spinner" aria-hidden="true"></span> Checking ${proofreading.mode === 'chapter' ? 'chapter scenes.' : 'this scene…'}${progress}</p>`;
   } else if (proofreading.status === 'unavailable') {
-    body = '<p class="proofreading-empty">Proofreading is temporarily unavailable. Your writing and browser spellcheck are unaffected.</p>';
+    const progress = proofreading.mode === 'chapter' && proofreading.progress.total
+      ? ` ${proofreading.progress.completed} of ${proofreading.progress.total} scenes were checked before the review stopped.`
+      : '';
+    body = `<p class="proofreading-empty">Proofreading is temporarily unavailable.${progress} Your writing and browser spellcheck are unaffected.</p>`;
   } else if (proofreading.status === 'changed') {
     body = '<p class="proofreading-empty">The text changed after this review. Proofread again for current suggestions.</p>';
   } else if (!reviews.length) {
@@ -301,23 +333,32 @@ function proofreadingPanelMarkup() {
       if (!review.issues.length) return '';
       return `<section class="proofreading-scene-group">
         ${proofreading.mode === 'chapter' ? `<h4>${escapeHtml(found.scene.title || 'Untitled scene')}</h4>` : ''}
-        ${review.issues.map((issue) => `<article class="proofreading-issue" data-proofread-locate="${escapeHtml(issue.id)}" data-proofread-scene="${escapeHtml(review.sceneId)}" tabindex="0">
+        ${review.issues.map((issue) => {
+          const dictionaryWord = NovellaProofreading.dictionaryWord(issue);
+          const isSelected = proofreading.selected?.sceneId === review.sceneId && proofreading.selected?.issueId === issue.id;
+          return `<article class="proofreading-issue ${isSelected ? 'selected' : ''}" data-proofread-locate="${escapeHtml(issue.id)}" data-proofread-scene="${escapeHtml(review.sceneId)}" tabindex="0">
           <div class="proofreading-category">${escapeHtml(issue.category)}</div>
           <p class="proofreading-excerpt">“${escapeHtml(issue.original)}”</p>
           <p class="proofreading-message">${escapeHtml(issue.message)}</p>
           <div class="proofreading-actions">
             ${issue.replacements.map((replacement, index) => `<button data-proofread-accept="${escapeHtml(issue.id)}" data-proofread-scene="${escapeHtml(review.sceneId)}" data-replacement-index="${index}">Accept “${escapeHtml(replacement.value)}”</button>`).join('')}
+            ${dictionaryWord ? `<button data-dictionary-add="${escapeHtml(dictionaryWord)}" data-dictionary-scope="novel">Add to novel dictionary</button><button data-dictionary-add="${escapeHtml(dictionaryWord)}" data-dictionary-scope="author">Add to author dictionary</button>` : ''}
             ${!issue.applicable ? '<span class="proofreading-advisory">Advisory only</span>' : ''}
             <button data-proofread-ignore="${escapeHtml(issue.id)}" data-proofread-scene="${escapeHtml(review.sceneId)}">Ignore</button>
             <button data-proofread-ignore-scene="${escapeHtml(issue.id)}" data-proofread-scene="${escapeHtml(review.sceneId)}">Ignore in scene</button>
           </div>
-        </article>`).join('')}
+        </article>`;
+        }).join('')}
       </section>`;
     }).join('');
   }
   return `<aside class="proofreading-panel" aria-live="polite" aria-label="Proofreading suggestions">
-    <div class="proofreading-heading"><strong>Proofreading</strong>${issueCount ? `<span>${pluralize(issueCount, 'issue')}</span>` : ''}</div>
+    <div class="proofreading-heading"><strong>Proofreading</strong><div class="proofreading-heading-actions">
+      ${issueCount ? `<span>${pluralize(issueCount, 'issue')}</span><button data-proofread-previous ${issueCount ? '' : 'disabled'} aria-label="Previous proofreading issue">←</button><button data-proofread-next ${issueCount ? '' : 'disabled'} aria-label="Next proofreading issue">→</button>` : ''}
+      <button data-dictionary-toggle aria-expanded="${dictionaries.open}">${dictionaries.open ? 'Close dictionaries' : 'Dictionaries'}</button>
+    </div></div>
     ${body}
+    ${dictionaryManagerMarkup()}
   </aside>`;
 }
 
@@ -693,9 +734,12 @@ async function proofreadScene(sceneId = activeSceneId) {
   proofreading.chapterId = found.chapter.id;
   proofreading.status = 'checking';
   proofreading.reviews.clear();
+  proofreading.selected = null;
+  proofreading.progress = { completed: 0, total: 1 };
   updateProofreadingPanel();
   await requestProofreading(found.scene, serial);
   if (serial !== proofreading.requestSerial) return;
+  proofreading.progress.completed = 1;
   proofreading.running = false;
   updateProofreadingPanel();
 }
@@ -710,11 +754,19 @@ async function proofreadChapter(chapterId) {
   proofreading.chapterId = chapter.id;
   proofreading.status = 'checking';
   proofreading.reviews.clear();
+  proofreading.selected = null;
+  proofreading.progress = { completed: 0, total: chapter.scenes.length };
   updateProofreadingPanel();
-  for (const scene of chapter.scenes) {
-    if (serial !== proofreading.requestSerial) return;
-    if (!(await requestProofreading(scene, serial)) && proofreading.status === 'unavailable') break;
-  }
+  await NovellaProofreading.runSequential(
+    chapter.scenes,
+    async (scene) => serial === proofreading.requestSerial ? requestProofreading(scene, serial) : false,
+    (completed) => serial !== proofreading.requestSerial || (!completed && proofreading.status === 'unavailable'),
+    (completed) => {
+      if (serial !== proofreading.requestSerial) return;
+      proofreading.progress.completed = completed;
+      updateProofreadingPanel();
+    }
+  );
   if (serial !== proofreading.requestSerial) return;
   proofreading.running = false;
   updateProofreadingPanel();
@@ -725,12 +777,16 @@ function locateProofreadingIssue(sceneId, issueId) {
   const issue = review?.issues.find((item) => item.id === issueId);
   const found = findScene(sceneId);
   if (!issue || !found) return;
+  proofreading.selected = { sceneId, issueId };
   if (activeSceneId !== sceneId) {
     activeSceneId = sceneId;
     editorMode = 'write';
     renderManuscript();
   } else if (editorMode !== 'write') {
     setEditorMode('write');
+    updateProofreadingPanel();
+  } else {
+    updateProofreadingPanel();
   }
   requestAnimationFrame(() => {
     const textarea = document.querySelector('.scene-content');
@@ -747,7 +803,94 @@ function ignoreProofreadingIssue(sceneId, issueId, throughoutScene = false) {
   review.issues = throughoutScene
     ? review.issues.filter((item) => !(item.original === issue.original && (item.ruleId || item.message) === (issue.ruleId || issue.message)))
     : review.issues.filter((item) => item.id !== issueId);
+  if (proofreading.selected?.issueId === issueId && proofreading.selected?.sceneId === sceneId) proofreading.selected = null;
   updateProofreadingPanel();
+}
+
+function navigateProofreadingIssue(direction) {
+  const reviews = proofreading.mode === 'chapter' && proofreading.chapterId
+    ? (project.chapters.find((chapter) => chapter.id === proofreading.chapterId)?.scenes || [])
+      .map((scene) => proofreading.reviews.get(scene.id)).filter(Boolean)
+    : [proofreading.reviews.get(activeSceneId)].filter(Boolean);
+  const next = NovellaProofreading.adjacentIssue(reviews, proofreading.selected, direction);
+  if (next) locateProofreadingIssue(next.sceneId, next.issueId);
+}
+
+async function loadDictionaries() {
+  if (!activeNovelId) return;
+  const novelId = activeNovelId;
+  dictionaries.loading = true;
+  dictionaries.error = '';
+  updateProofreadingPanel();
+  try {
+    const response = await fetch(`/api/proofreading/dictionaries?novelId=${encodeURIComponent(novelId)}`);
+    if (!response.ok) throw new Error('Dictionaries could not be loaded.');
+    const result = await response.json();
+    if (dictionaries.novelId !== novelId || activeNovelId !== novelId) return;
+    dictionaries.author = Array.isArray(result.author) ? result.author : [];
+    dictionaries.novel = Array.isArray(result.novel) ? result.novel : [];
+    dictionaries.loaded = true;
+  } catch (error) {
+    if (dictionaries.novelId === novelId) dictionaries.error = error.message;
+  } finally {
+    if (dictionaries.novelId === novelId) {
+      dictionaries.loading = false;
+      updateProofreadingPanel();
+    }
+  }
+}
+
+function toggleDictionaries() {
+  dictionaries.open = !dictionaries.open;
+  updateProofreadingPanel();
+  if (dictionaries.open && !dictionaries.loaded) loadDictionaries();
+}
+
+async function mutateDictionary(method, scope, entry) {
+  const novelId = activeNovelId;
+  try {
+    const response = await fetch('/api/proofreading/dictionaries', {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ novelId, scope, entry })
+    });
+    const result = await response.json().catch(() => ({ error: 'Dictionary update failed.' }));
+    if (!response.ok) throw new Error(result.error || 'Dictionary update failed.');
+    if (activeNovelId !== novelId || dictionaries.novelId !== novelId) return false;
+    const values = result.dictionaries || result;
+    dictionaries.author = Array.isArray(values.author) ? values.author : [];
+    dictionaries.novel = Array.isArray(values.novel) ? values.novel : [];
+    dictionaries.loaded = true;
+    dictionaries.error = '';
+    updateProofreadingPanel();
+    return true;
+  } catch (error) {
+    dictionaries.error = error.message;
+    dictionaries.open = true;
+    updateProofreadingPanel();
+    return false;
+  }
+}
+
+async function refreshProofreadingAfterDictionaryChange() {
+  if (!proofreadingConfig.enabled) return;
+  if (proofreading.mode === 'chapter' && proofreading.chapterId) await proofreadChapter(proofreading.chapterId);
+  else await proofreadScene(activeSceneId);
+}
+
+async function addDictionaryEntry(scope, entry) {
+  if (!(await mutateDictionary('POST', scope, entry))) return;
+  showToast(`Added “${entry}” to the ${scope} dictionary`);
+  await refreshProofreadingAfterDictionaryChange();
+}
+
+async function removeDictionaryEntry(scope, entry) {
+  const novelId = activeNovelId;
+  if (!(await askToDelete('Remove dictionary word?', `“${entry}” will be checked again in future reviews.`))) return;
+  if (activeNovelId !== novelId) return showToast('The active novel changed; no dictionary entry was removed.');
+  if (!(await mutateDictionary('DELETE', scope, entry))) return;
+  showToast(`Removed “${entry}” from the ${scope} dictionary`);
+  await refreshProofreadingAfterDictionaryChange();
 }
 
 function acceptProofreadingIssue(sceneId, issueId, replacementIndex) {
@@ -780,6 +923,13 @@ document.querySelector('.primary-nav').addEventListener('click', (event) => {
 });
 
 app.addEventListener('click', (event) => {
+  if (event.target.closest('[data-dictionary-toggle]')) return toggleDictionaries();
+  if (event.target.closest('[data-proofread-previous]')) return navigateProofreadingIssue(-1);
+  if (event.target.closest('[data-proofread-next]')) return navigateProofreadingIssue(1);
+  const dictionaryAddButton = event.target.closest('[data-dictionary-add]');
+  if (dictionaryAddButton) return addDictionaryEntry(dictionaryAddButton.dataset.dictionaryScope, dictionaryAddButton.dataset.dictionaryAdd);
+  const dictionaryRemoveButton = event.target.closest('[data-dictionary-remove]');
+  if (dictionaryRemoveButton) return removeDictionaryEntry(dictionaryRemoveButton.dataset.dictionaryScope, dictionaryRemoveButton.dataset.dictionaryRemove);
   const acceptButton = event.target.closest('[data-proofread-accept]');
   if (acceptButton) return acceptProofreadingIssue(acceptButton.dataset.proofreadScene, acceptButton.dataset.proofreadAccept, Number(acceptButton.dataset.replacementIndex));
   const ignoreSceneButton = event.target.closest('[data-proofread-ignore-scene]');
@@ -817,6 +967,14 @@ app.addEventListener('click', (event) => {
   if (deleteChapterButton) return deleteChapter(deleteChapterButton.dataset.deleteChapter);
   const deleteReferenceButton = event.target.closest('[data-delete-reference]');
   if (deleteReferenceButton) return deleteReference(deleteReferenceButton.dataset.deleteReference);
+});
+
+app.addEventListener('submit', (event) => {
+  const form = event.target.closest('[data-dictionary-form]');
+  if (!form) return;
+  event.preventDefault();
+  const data = new FormData(form);
+  addDictionaryEntry(String(data.get('scope') || ''), String(data.get('entry') || ''));
 });
 
 app.addEventListener('change', (event) => {

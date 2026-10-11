@@ -19,7 +19,9 @@ Existing JSON installations must be imported explicitly with `npm run migrate:js
 
 Scene text supports Markdown. Use the formatting toolbar or `Ctrl/Cmd+B`, `Ctrl/Cmd+I`, and `Ctrl/Cmd+K`, then switch to **Preview** to see the formatted result.
 
-Browser spellcheck is always enabled in the scene editor. In the private Compose deployment, **Proofread scene** and **Proofread chapter** add user-triggered, self-hosted spelling and grammar review. Suggestions appear beside the existing Markdown textarea and never change the manuscript until **Accept** is selected. **Ignore** and **Ignore in scene** last only for the current review; a personal dictionary is intentionally deferred.
+Browser spellcheck is always enabled in the scene editor. In the private Compose deployment, **Proofread scene** and **Proofread chapter** add user-triggered, self-hosted spelling and grammar review. Suggestions appear beside the existing Markdown textarea and never change the manuscript until **Accept** is selected. Previous/next controls move safely among findings, including across chapter scenes.
+
+Spelling findings can be added either to the current novel's dictionary or to the signed-in author's dictionary shared across their novels. Open **Dictionaries** to add words directly or remove them. Matching is exact, Unicode-normalized, and case-insensitive; dictionary entries suppress only matching spelling findings, never grammar or style findings. **Ignore** and **Ignore in scene** remain temporary for the current review.
 
 When ElevenLabs is configured, the **Listen** button reads the current scene aloud. The API key remains on the server and is never sent to the browser.
 

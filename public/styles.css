@@ -329,6 +329,17 @@ button { color: inherit; }
 }
 .proofreading-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 11px; font-size: 12px; }
 .proofreading-heading span { color: var(--soft); font-size: 10px; font-weight: 500; }
+.proofreading-heading-actions { display: flex; align-items: center; gap: 5px; }
+.proofreading-heading-actions button, .dictionary-manager button, .dictionary-manager input, .dictionary-manager select {
+  min-height: 27px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--white);
+  color: var(--muted);
+  font-size: 10px;
+}
+.proofreading-heading-actions button, .dictionary-manager button { cursor: pointer; }
+.proofreading-heading-actions button:hover, .dictionary-manager button:hover { background: var(--accent-soft); color: var(--ink); }
 .proofreading-empty { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .proofreading-spinner { display: inline-block; width: 11px; height: 11px; margin-right: 6px; border: 1px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; }
 .proofreading-scene-group + .proofreading-scene-group { margin-top: 17px; padding-top: 15px; border-top: 1px solid var(--line); }
@@ -336,6 +347,7 @@ button { color: inherit; }
 .proofreading-issue { padding: 11px; border-radius: 8px; background: var(--paper); outline: 0; }
 .proofreading-issue + .proofreading-issue { margin-top: 7px; }
 .proofreading-issue:focus { box-shadow: 0 0 0 2px var(--accent-soft); }
+.proofreading-issue.selected { box-shadow: inset 3px 0 var(--accent); }
 .proofreading-category { color: var(--accent-dark); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .proofreading-excerpt { margin: 5px 0 3px; font-family: var(--serif); font-size: 14px; }
 .proofreading-message { margin: 0 0 9px; color: var(--muted); font-size: 11px; line-height: 1.45; }
@@ -344,6 +356,19 @@ button { color: inherit; }
 .proofreading-actions button:first-child { border-color: #d6b5a8; color: var(--accent-dark); }
 .proofreading-actions button:hover { background: var(--accent-soft); color: var(--ink); }
 .proofreading-advisory { color: var(--soft); font-size: 10px; font-style: italic; }
+.dictionary-manager { margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--line); }
+.dictionary-manager form > label { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 700; }
+.dictionary-form-row { display: grid; grid-template-columns: minmax(100px, 1fr) auto auto; gap: 5px; }
+.dictionary-manager input { min-width: 0; padding: 0 8px; font-size: 12px; }
+.dictionary-manager select { padding: 0 6px; }
+.dictionary-manager button { padding: 0 8px; }
+.dictionary-manager form > p { margin: 6px 0 0; color: var(--soft); font-size: 10px; line-height: 1.4; }
+.dictionary-error { margin: 9px 0 0; color: #a84235; font-size: 11px; }
+.dictionary-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.dictionary-scope h4 { margin: 0 0 7px; font-size: 11px; }
+.dictionary-scope ul { max-height: 150px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.dictionary-scope li { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 28px; border-bottom: 1px solid var(--line); font-family: var(--serif); font-size: 12px; }
+.dictionary-scope li button { min-height: 23px; padding: 0 5px; border: 0; background: transparent; font-family: var(--sans); font-size: 9px; }
 .scene-content {
   width: 100%;
   height: 62vh;
@@ -444,6 +469,7 @@ button { color: inherit; }
   .editor-breadcrumb { margin-bottom: 22px; }
   .editor-meta { align-items: flex-start; gap: 12px; }
   .scene-content { height: 60vh; min-height: 320px; }
+  .dictionary-form-row, .dictionary-lists { grid-template-columns: 1fr; }
   .library-page { width: min(100% - 32px, 1120px); padding-top: 35px; }
   .library-header { align-items: flex-start; flex-direction: column; }
   .library-header h1 { font-size: 32px; }

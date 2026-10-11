@@ -5,6 +5,7 @@ const { randomUUID } = require('node:crypto');
 const { createAuth } = require('./auth');
 const { SqliteStore } = require('./storage');
 const { createLanguageToolAdapter } = require('./proofreading/languagetool-adapter');
+const { filterDictionaryIssues } = require('./proofreading/dictionary');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -309,6 +310,32 @@ function createApp({
         }));
       }
 
+      if (url.pathname === '/api/proofreading/dictionaries' && request.method === 'GET') {
+        const novelId = url.searchParams.get('novelId') || '';
+        if (!/^[a-z0-9-]{1,100}$/i.test(novelId)) {
+          const error = new Error('A valid novel is required.');
+          error.statusCode = 400;
+          throw error;
+        }
+        return send(response, 200, JSON.stringify(library.dictionaries(session, novelId)));
+      }
+
+      if (url.pathname === '/api/proofreading/dictionaries' && (request.method === 'POST' || request.method === 'DELETE')) {
+        const input = JSON.parse(await readBody(request));
+        const novelId = cleanText(input?.novelId);
+        const scope = cleanText(input?.scope);
+        if (!/^[a-z0-9-]{1,100}$/i.test(novelId)) {
+          const error = new Error('A valid novel is required.');
+          error.statusCode = 400;
+          throw error;
+        }
+        if (request.method === 'POST') {
+          const entry = library.addDictionaryEntry(session, novelId, scope, input?.entry);
+          return send(response, 201, JSON.stringify({ entry, dictionaries: library.dictionaries(session, novelId) }));
+        }
+        return send(response, 200, JSON.stringify(library.deleteDictionaryEntry(session, novelId, scope, input?.entry)));
+      }
+
       if (url.pathname === '/api/proofreading/check' && request.method === 'POST') {
         const input = JSON.parse(await readBody(request));
         if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -347,7 +374,9 @@ function createApp({
         }
         if (!proofreader) return send(response, 200, JSON.stringify({ issues: [], status: 'unavailable' }));
         try {
-          const issues = await proofreader.check({ text, language });
+          const dictionary = library.dictionaries(session, novelId);
+          const entries = new Set([...dictionary.author, ...dictionary.novel].map((entry) => entry.normalized));
+          const issues = filterDictionaryIssues(await proofreader.check({ text, language }), entries);
           return send(response, 200, JSON.stringify({ issues, status: 'available' }));
         } catch {
           return send(response, 200, JSON.stringify({ issues: [], status: 'unavailable' }));

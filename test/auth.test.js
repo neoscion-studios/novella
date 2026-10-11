@@ -321,6 +321,59 @@ test('isolates every novel operation by Entra tenant and object ID', async (t) =
   assert.equal(crossUserProofread.status, 404);
 });
 
+test('isolates author and novel dictionaries by stable identity', async (t) => {
+  const { server, base } = await startTestApp({
+    proofreadingConfig: { enabled: true },
+    proofreadingAdapter: { check: async () => [{
+      id: 'spell', category: 'spelling', message: 'Unknown word', start: 0, end: 7,
+      original: 'Caelion', replacements: [], provider: 'test', applicable: true
+    }] }
+  });
+  t.after(() => server.close());
+  const firstCookie = sessionCookieFor('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  const secondCookie = sessionCookieFor('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+  const headersFor = (cookie) => ({ Cookie: cookie, Origin: 'http://localhost:4173', 'Content-Type': 'application/json' });
+
+  const firstCreated = await fetch(`${base}/api/novels`, {
+    method: 'POST', headers: headersFor(firstCookie), body: JSON.stringify({ title: 'Private dictionary novel' })
+  }).then((response) => response.json());
+  const firstNovelId = firstCreated.novel.id;
+  const firstNovel = firstCreated.project;
+  const firstSceneId = firstNovel.chapters[0].scenes[0].id;
+  const secondCatalog = await fetch(`${base}/api/novels`, { headers: { Cookie: secondCookie } }).then((response) => response.json());
+  const secondNovelId = secondCatalog.novels[0].id;
+  const secondNovel = await fetch(`${base}/api/novels/${secondNovelId}`, { headers: { Cookie: secondCookie } }).then((response) => response.json());
+  const secondSceneId = secondNovel.chapters[0].scenes[0].id;
+
+  const added = await fetch(`${base}/api/proofreading/dictionaries`, {
+    method: 'POST', headers: headersFor(firstCookie),
+    body: JSON.stringify({ novelId: firstNovelId, scope: 'author', entry: 'Caelion' })
+  });
+  assert.equal(added.status, 201);
+
+  const firstCheck = await fetch(`${base}/api/proofreading/check`, {
+    method: 'POST', headers: headersFor(firstCookie),
+    body: JSON.stringify({ novelId: firstNovelId, sceneId: firstSceneId, text: 'Caelion' })
+  }).then((response) => response.json());
+  assert.deepEqual(firstCheck.issues, []);
+
+  const secondCheck = await fetch(`${base}/api/proofreading/check`, {
+    method: 'POST', headers: headersFor(secondCookie),
+    body: JSON.stringify({ novelId: secondNovelId, sceneId: secondSceneId, text: 'Caelion' })
+  }).then((response) => response.json());
+  assert.equal(secondCheck.issues.length, 1);
+
+  const crossUserRead = await fetch(`${base}/api/proofreading/dictionaries?novelId=${firstNovelId}`, {
+    headers: { Cookie: secondCookie }
+  });
+  assert.equal(crossUserRead.status, 404);
+  const crossUserDelete = await fetch(`${base}/api/proofreading/dictionaries`, {
+    method: 'DELETE', headers: headersFor(secondCookie),
+    body: JSON.stringify({ novelId: firstNovelId, scope: 'author', entry: 'Caelion' })
+  });
+  assert.equal(crossUserDelete.status, 404);
+});
+
 test('refuses incomplete production authentication configuration', () => {
   assert.throws(() => createAuth({
     config: { required: true, sessionSecret: 'long-enough-session-secret-for-testing' }

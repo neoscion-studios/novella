@@ -192,6 +192,8 @@ node --env-file=.env.local server.js
 
 SQLite may use `-wal` and `-shm` companion files while Novella is running. For a simple consistent filesystem backup, briefly stop Novella before copying the database:
 
+Schema version 2 adds user-owned author dictionary entries and novel-owned dictionary entries to the same database. Startup creates these tables additively for existing installations; manuscript JSON and sample templates are not rewritten. Backing up and restoring `novella.sqlite` therefore preserves both manuscripts and dictionaries together.
+
 ```sh
 docker compose stop novella
 cp data/novella.sqlite novella-sqlite-$(date +%F).sqlite
@@ -256,4 +258,5 @@ If users have edited SQLite-backed novels after migration, preserve `novella.sql
 - The application requests no refresh token and stores no Entra tokens in SQLite or its session cookie.
 - Run only one Novella replica while using the synchronous embedded SQLite connection.
 - Proofreading text is sent only from Novella to the private checker for the duration of a request. Neither service is configured to persist it, routine checker logging is disabled, responses are bounded, and upstream errors are sanitized.
+- Dictionary entries remain in SQLite under the authenticated user's numeric database identity. Author entries never leave that user; novel entries use a composite foreign key to an owned novel and are removed if that novel is deleted.
 - The pinned checker image is a community image rather than an official LanguageTool image. Review its release, digest, Dockerfile, license, and security posture before upgrades; update the version and digest together.

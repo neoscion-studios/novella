@@ -2,9 +2,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
+const { MAX_DICTIONARY_ENTRIES_PER_SCOPE, normalizeDictionaryEntry } = require('./proofreading/dictionary');
 
 function notFound() {
   const error = new Error('Novel not found.');
+  error.statusCode = 404;
+  return error;
+}
+
+function dictionaryNotFound() {
+  const error = new Error('Dictionary entry not found.');
   error.statusCode = 404;
   return error;
 }
@@ -63,8 +70,26 @@ class SqliteStore {
       CREATE INDEX IF NOT EXISTS novels_user_updated
         ON novels(user_id, updated_at DESC);
 
-      PRAGMA user_version = 1;
+      CREATE TABLE IF NOT EXISTS author_dictionary_entries (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        normalized_entry TEXT NOT NULL,
+        display_entry TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, normalized_entry)
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS novel_dictionary_entries (
+        user_id INTEGER NOT NULL,
+        novel_id TEXT NOT NULL,
+        normalized_entry TEXT NOT NULL,
+        display_entry TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, novel_id, normalized_entry),
+        FOREIGN KEY (user_id, novel_id) REFERENCES novels(user_id, id) ON DELETE CASCADE
+      ) STRICT;
     `);
+    const schemaVersion = this.database.prepare('PRAGMA user_version').get().user_version;
+    if (schemaVersion < 2) this.database.exec('PRAGMA user_version = 2');
 
     this.statements = {
       insertUser: this.database.prepare(`
@@ -97,7 +122,23 @@ class SqliteStore {
         UPDATE novels SET title = ?, author = ?, project_json = ?, updated_at = ?
         WHERE user_id = ? AND id = ?
       `),
-      deleteNovel: this.database.prepare('DELETE FROM novels WHERE user_id = ? AND id = ?')
+      deleteNovel: this.database.prepare('DELETE FROM novels WHERE user_id = ? AND id = ?'),
+      listAuthorDictionary: this.database.prepare(`
+        SELECT display_entry AS entry, normalized_entry AS normalized
+        FROM author_dictionary_entries WHERE user_id = ? ORDER BY normalized_entry
+      `),
+      listNovelDictionary: this.database.prepare(`
+        SELECT display_entry AS entry, normalized_entry AS normalized
+        FROM novel_dictionary_entries WHERE user_id = ? AND novel_id = ? ORDER BY normalized_entry
+      `),
+      countAuthorDictionary: this.database.prepare('SELECT COUNT(*) AS count FROM author_dictionary_entries WHERE user_id = ?'),
+      countNovelDictionary: this.database.prepare('SELECT COUNT(*) AS count FROM novel_dictionary_entries WHERE user_id = ? AND novel_id = ?'),
+      selectAuthorDictionaryEntry: this.database.prepare('SELECT display_entry AS entry, normalized_entry AS normalized FROM author_dictionary_entries WHERE user_id = ? AND normalized_entry = ?'),
+      selectNovelDictionaryEntry: this.database.prepare('SELECT display_entry AS entry, normalized_entry AS normalized FROM novel_dictionary_entries WHERE user_id = ? AND novel_id = ? AND normalized_entry = ?'),
+      insertAuthorDictionaryEntry: this.database.prepare('INSERT INTO author_dictionary_entries (user_id, normalized_entry, display_entry, created_at) VALUES (?, ?, ?, ?)'),
+      insertNovelDictionaryEntry: this.database.prepare('INSERT INTO novel_dictionary_entries (user_id, novel_id, normalized_entry, display_entry, created_at) VALUES (?, ?, ?, ?, ?)'),
+      deleteAuthorDictionaryEntry: this.database.prepare('DELETE FROM author_dictionary_entries WHERE user_id = ? AND normalized_entry = ?'),
+      deleteNovelDictionaryEntry: this.database.prepare('DELETE FROM novel_dictionary_entries WHERE user_id = ? AND novel_id = ? AND normalized_entry = ?')
     };
   }
 
@@ -198,6 +239,62 @@ class SqliteStore {
       this.statements.deleteNovel.run(user.id, id);
       return { version: 1, novels: this.statements.listNovels.all(user.id).map(summary) };
     });
+  }
+
+  dictionaries(identity, novelId) {
+    const user = this.userFor(identity);
+    if (!this.statements.selectNovel.get(user.id, novelId)) throw notFound();
+    const entries = (rows) => rows.map((row) => ({ entry: row.entry, normalized: row.normalized }));
+    return {
+      author: entries(this.statements.listAuthorDictionary.all(user.id)),
+      novel: entries(this.statements.listNovelDictionary.all(user.id, novelId))
+    };
+  }
+
+  addDictionaryEntry(identity, novelId, scope, value) {
+    const user = this.userFor(identity);
+    if (!this.statements.selectNovel.get(user.id, novelId)) throw notFound();
+    if (scope !== 'author' && scope !== 'novel') {
+      const error = new Error('Dictionary scope must be author or novel.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const normalized = normalizeDictionaryEntry(value);
+    const select = scope === 'author' ? this.statements.selectAuthorDictionaryEntry : this.statements.selectNovelDictionaryEntry;
+    const selectArgs = scope === 'author' ? [user.id, normalized.normalized] : [user.id, novelId, normalized.normalized];
+    if (select.get(...selectArgs)) {
+      const error = new Error('That word is already in this dictionary.');
+      error.statusCode = 409;
+      throw error;
+    }
+    const count = scope === 'author'
+      ? this.statements.countAuthorDictionary.get(user.id).count
+      : this.statements.countNovelDictionary.get(user.id, novelId).count;
+    if (count >= MAX_DICTIONARY_ENTRIES_PER_SCOPE) {
+      const error = new Error(`This dictionary is limited to ${MAX_DICTIONARY_ENTRIES_PER_SCOPE} entries.`);
+      error.statusCode = 409;
+      throw error;
+    }
+    const now = new Date().toISOString();
+    if (scope === 'author') this.statements.insertAuthorDictionaryEntry.run(user.id, normalized.normalized, normalized.entry, now);
+    else this.statements.insertNovelDictionaryEntry.run(user.id, novelId, normalized.normalized, normalized.entry, now);
+    return normalized;
+  }
+
+  deleteDictionaryEntry(identity, novelId, scope, value) {
+    const user = this.userFor(identity);
+    if (!this.statements.selectNovel.get(user.id, novelId)) throw notFound();
+    if (scope !== 'author' && scope !== 'novel') {
+      const error = new Error('Dictionary scope must be author or novel.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const { normalized } = normalizeDictionaryEntry(value);
+    const result = scope === 'author'
+      ? this.statements.deleteAuthorDictionaryEntry.run(user.id, normalized)
+      : this.statements.deleteNovelDictionaryEntry.run(user.id, novelId, normalized);
+    if (result.changes === 0) throw dictionaryNotFound();
+    return this.dictionaries(identity, novelId);
   }
 
   import(identity, records) {

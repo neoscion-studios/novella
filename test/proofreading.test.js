@@ -7,7 +7,7 @@ const { Readable } = require('node:stream');
 const { createApp } = require('../server');
 const { createLanguageToolAdapter } = require('../proofreading/languagetool-adapter');
 const { mapProjectionSpan, projectMarkdown } = require('../proofreading/markdown-projection');
-const { applyReplacement, canApply, responseMatches } = require('../public/proofreading');
+const { adjacentIssue, applyReplacement, canApply, dictionaryWord, responseMatches, runSequential } = require('../public/proofreading');
 
 const testApps = new Map();
 let nextPort = 43000;
@@ -139,6 +139,42 @@ test('accept applies only to the exact novel, scene, snapshot, and substring', (
   assert.equal(responseMatches(5, 5, 'novel-1', 'novel-2'), false);
 });
 
+test('dictionary actions accept only spelling words and issue navigation crosses scenes safely', () => {
+  assert.equal(dictionaryWord({ category: 'spelling', original: '  Caelion  ' }), 'Caelion');
+  assert.equal(dictionaryWord({ category: 'grammar', original: 'Caelion' }), null);
+  assert.equal(dictionaryWord({ category: 'spelling', original: 'two words' }), null);
+  const reviews = [
+    { sceneId: 's1', issues: [{ id: 'a' }, { id: 'b' }] },
+    { sceneId: 's2', issues: [{ id: 'c' }] }
+  ];
+  assert.deepEqual(adjacentIssue(reviews, { sceneId: 's1', issueId: 'b' }, 1), { sceneId: 's2', issueId: 'c' });
+  assert.deepEqual(adjacentIssue(reviews, { sceneId: 's1', issueId: 'a' }, -1), { sceneId: 's2', issueId: 'c' });
+});
+
+test('chapter work is sequential, reports progress, and stops safely on unavailability', async () => {
+  let active = 0;
+  let maxActive = 0;
+  const visited = [];
+  const progress = [];
+  const completed = await runSequential(
+    ['s1', 's2', 's3'],
+    async (sceneId) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await Promise.resolve();
+      visited.push(sceneId);
+      active -= 1;
+      return sceneId !== 's2';
+    },
+    (available) => !available,
+    (count, total) => progress.push([count, total])
+  );
+  assert.equal(maxActive, 1);
+  assert.equal(completed, 2);
+  assert.deepEqual(visited, ['s1', 's2']);
+  assert.deepEqual(progress, [[1, 3], [2, 3]]);
+});
+
 test('proofreading API authorizes scenes, uses unsaved snapshots, and degrades safely', async (t) => {
   const calls = [];
   const { server, base } = await startApp({
@@ -170,6 +206,120 @@ test('proofreading API authorizes scenes, uses unsaved snapshots, and degrades s
   assert.equal(missing.status, 404);
 });
 
+test('complete API pipeline sends the full Markdown projection and maps provider offsets to source', async (t) => {
+  const passage = await fs.readFile(path.join(__dirname, 'fixtures', 'proofreading-diagnostic.md'), 'utf8');
+  let upstream;
+  const fetchImpl = async (url, options) => {
+    const body = new URLSearchParams(options.body);
+    upstream = { url, options, text: body.get('text'), language: body.get('language') };
+    const typoOffset = upstream.text.indexOf('teh old');
+    const grammarOffset = upstream.text.indexOf('Caelion walk');
+    return new Response(JSON.stringify({ matches: [
+      { offset: typoOffset, length: 3, message: 'Possible spelling mistake', replacements: [{ value: 'the' }], rule: { id: 'MORFOLOGIK_RULE_EN_US', issueType: 'misspelling' } },
+      { offset: grammarOffset, length: 'Caelion walk'.length, message: 'Agreement problem', replacements: [{ value: 'Caelion walks' }], rule: { id: 'SUBJECT_VERB_AGREEMENT', issueType: 'grammar' } }
+    ] }), { headers: { 'Content-Type': 'application/json' } });
+  };
+  const { server, base } = await startApp({
+    fetchImpl,
+    proofreadingConfig: { enabled: true, url: 'http://checker.internal:8010', language: 'en-US' }
+  });
+  t.after(() => server.close());
+  const catalog = await request(`${base}/api/novels`).then((response) => response.json());
+  const novelId = catalog.novels[0].id;
+  const novel = await request(`${base}/api/novels/${novelId}`).then((response) => response.json());
+  const sceneId = novel.chapters[0].scenes[0].id;
+  const result = await request(`${base}/api/proofreading/check`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId, sceneId, text: passage, language: 'en-US' })
+  }).then((response) => response.json());
+
+  assert.equal(upstream.url, 'http://checker.internal:8010/v2/check');
+  assert.equal(upstream.options.method, 'POST');
+  assert.equal(upstream.options.headers['Content-Type'], 'application/x-www-form-urlencoded');
+  assert.equal(upstream.language, 'en-US');
+  assert.equal(upstream.text, projectMarkdown(passage).text);
+  assert.equal(upstream.text.includes('example.test'), false);
+  assert.equal(upstream.text.includes('teh_code'), false);
+  assert.equal(upstream.text.includes('deliberately skipped inside a fence'), false);
+  assert.match(upstream.text, /Visit and keep unchanged\./);
+  assert.doesNotMatch(upstream.text, /Visit {2,}|keep {2,}/);
+  assert.deepEqual(result.issues.map((issue) => ({ category: issue.category, original: issue.original })), [
+    { category: 'spelling', original: 'teh' },
+    { category: 'grammar', original: 'Caelion walk' }
+  ]);
+  assert.equal(passage.slice(result.issues[0].start, result.issues[0].end), 'teh');
+  assert.equal(passage.slice(result.issues[1].start, result.issues[1].end), 'Caelion walk');
+});
+
+test('dictionary APIs filter exact spelling findings without suppressing grammar', async (t) => {
+  const issues = [
+    { id: 'spell', category: 'spelling', message: 'Unknown word', start: 0, end: 7, original: 'Caelion', replacements: [], provider: 'test', applicable: true },
+    { id: 'grammar', category: 'grammar', message: 'Agreement', start: 8, end: 11, original: 'are', replacements: [{ value: 'is' }], provider: 'test', applicable: true },
+    { id: 'longer', category: 'spelling', message: 'Unknown word', start: 12, end: 22, original: 'Caelionian', replacements: [], provider: 'test', applicable: true }
+  ];
+  const { server, base } = await startApp({
+    proofreadingConfig: { enabled: true },
+    proofreadingAdapter: { check: async () => issues }
+  });
+  t.after(() => server.close());
+  const catalog = await request(`${base}/api/novels`).then((response) => response.json());
+  const novelId = catalog.novels[0].id;
+  const novel = await request(`${base}/api/novels/${novelId}`).then((response) => response.json());
+  const sceneId = novel.chapters[0].scenes[0].id;
+
+  const added = await request(`${base}/api/proofreading/dictionaries`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId, scope: 'novel', entry: 'Caelion' })
+  });
+  assert.equal(added.status, 201);
+  assert.deepEqual((await added.json()).dictionaries.novel, [{ entry: 'Caelion', normalized: 'caelion' }]);
+
+  const checked = await request(`${base}/api/proofreading/check`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId, sceneId, text: 'Caelion are Caelionian' })
+  }).then((response) => response.json());
+  assert.deepEqual(checked.issues.map((issue) => issue.id), ['grammar', 'longer']);
+
+  const duplicate = await request(`${base}/api/proofreading/dictionaries`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId, scope: 'novel', entry: 'CAELION' })
+  });
+  assert.equal(duplicate.status, 409);
+  const invalid = await request(`${base}/api/proofreading/dictionaries`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId, scope: 'novel', entry: 'two words' })
+  });
+  assert.equal(invalid.status, 400);
+
+  const removed = await request(`${base}/api/proofreading/dictionaries`, {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId, scope: 'novel', entry: 'caelion' })
+  });
+  assert.equal(removed.status, 200);
+  const rechecked = await request(`${base}/api/proofreading/check`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId, sceneId, text: 'Caelion are Caelionian' })
+  }).then((response) => response.json());
+  assert.deepEqual(rechecked.issues.map((issue) => issue.id), ['spell', 'grammar', 'longer']);
+
+  await request(`${base}/api/proofreading/dictionaries`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId, scope: 'author', entry: 'Caelion' })
+  });
+  const second = await request(`${base}/api/novels`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Second' })
+  }).then((response) => response.json());
+  const secondCheck = await request(`${base}/api/proofreading/check`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      novelId: second.novel.id,
+      sceneId: second.project.chapters[0].scenes[0].id,
+      text: 'Caelion are Caelionian'
+    })
+  }).then((response) => response.json());
+  assert.deepEqual(secondCheck.issues.map((issue) => issue.id), ['grammar', 'longer']);
+});
+
 test('disabled and failed checkers leave proofreading requests safe and usable', async (t) => {
   const disabled = await startApp({ proofreadingConfig: { enabled: false } });
   const failed = await startApp({
@@ -194,6 +344,12 @@ test('disabled and failed checkers leave proofreading requests safe and usable',
     assert.equal(JSON.stringify(result).includes('private upstream detail'), false);
     assert.deepEqual(await request(`${instance.base}/api/health`).then((response) => response.json()), { ok: true });
   }
+  const catalog = await request(`${disabled.base}/api/novels`).then((response) => response.json());
+  const disabledAdd = await request(`${disabled.base}/api/proofreading/dictionaries`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId: catalog.novels[0].id, scope: 'author', entry: 'Caelion' })
+  });
+  assert.equal(disabledAdd.status, 201);
 });
 
 test('Compose keeps LanguageTool private, isolated, and digest-pinned', async () => {
@@ -205,4 +361,17 @@ test('Compose keeps LanguageTool private, isolated, and digest-pinned', async ()
   assert.doesNotMatch(checker, /\n\s+ports:/);
   assert.doesNotMatch(checker, /traefik/);
   assert.match(compose, /proofreading:\n\s+name: novella_proofreading\n\s+internal: true/);
+  const dockerfile = await fs.readFile(path.join(__dirname, '..', 'Dockerfile'), 'utf8');
+  assert.match(dockerfile, /COPY --chown=node:node proofreading \.\/proofreading/);
+});
+
+test('current browser assets expose proofreading and dictionary controls without a browser-specific dependency', async () => {
+  const index = await fs.readFile(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const appSource = await fs.readFile(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  assert.ok(index.indexOf('/proofreading.js') < index.indexOf('/app.js'));
+  assert.match(appSource, /spellcheck="true"/);
+  assert.match(appSource, /data-proofread-previous/);
+  assert.match(appSource, /data-proofread-next/);
+  assert.match(appSource, /data-dictionary-toggle/);
+  assert.doesNotMatch(appSource, /userAgent|Firefox|Safari/);
 });

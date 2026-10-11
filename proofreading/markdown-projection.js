@@ -8,8 +8,13 @@ function projectMarkdown(source) {
   const sourceOffsets = [];
   let fenced = null;
 
-  const appendRange = (start, end) => {
+  const appendRange = (start, end, afterSkippedSyntax = false) => {
     for (let index = start; index < end; index += 1) {
+      if (
+        afterSkippedSyntax && index === start
+        && /[ \t]/.test(source[index])
+        && /[ \t]/.test(output.at(-1) || '')
+      ) continue;
       output.push(source[index]);
       sourceOffsets.push(index);
     }
@@ -46,6 +51,7 @@ function projectMarkdown(source) {
 
 function projectLine(source, start, end, appendRange) {
   let cursor = start;
+  let skippedSyntax = false;
   const prefix = source.slice(start, end).match(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-+*]\s+|\d+[.)]\s+)/);
   if (prefix) {
     const whitespace = prefix[0].match(/^\s*/)[0].length;
@@ -58,6 +64,7 @@ function projectLine(source, start, end, appendRange) {
     const inlineCode = rest.match(/^(`+)([\s\S]*?)\1/);
     if (inlineCode) {
       cursor += inlineCode[0].length;
+      skippedSyntax = true;
       continue;
     }
     const imageOrLink = rest.match(/^!?\[([^\]]*)\]\((?:\\.|[^)])*\)/);
@@ -67,34 +74,41 @@ function projectLine(source, start, end, appendRange) {
         appendRange(labelStart, labelStart + imageOrLink[1].length);
       }
       cursor += imageOrLink[0].length;
+      skippedSyntax = true;
       continue;
     }
     const autolink = rest.match(/^<(?:(?:https?:\/\/|mailto:)[^>]+|[^ <>@]+@[^ <>@]+)>/i);
     if (autolink) {
       cursor += autolink[0].length;
+      skippedSyntax = true;
       continue;
     }
     const bareUrl = rest.match(/^(?:https?:\/\/|www\.)[^\s<]+/i);
     if (bareUrl) {
       cursor += bareUrl[0].length;
+      skippedSyntax = true;
       continue;
     }
     const html = rest.match(/^<\/?[A-Za-z][^>]*>/);
     if (html) {
       cursor += html[0].length;
+      skippedSyntax = true;
       continue;
     }
     const delimiter = rest.match(/^(?:\*\*|__|~~|[*_])/);
     if (delimiter) {
       cursor += delimiter[0].length;
+      skippedSyntax = true;
       continue;
     }
     if (source[cursor] === '\\' && cursor + 1 < end && /[\\`*{}[\]()#+.!_>~-]/.test(source[cursor + 1])) {
       appendRange(cursor + 1, cursor + 2);
       cursor += 2;
+      skippedSyntax = false;
       continue;
     }
-    appendRange(cursor, cursor + 1);
+    appendRange(cursor, cursor + 1, skippedSyntax);
+    skippedSyntax = false;
     cursor += 1;
   }
 }

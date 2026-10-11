@@ -158,6 +158,8 @@ The application exposes these principal endpoints:
 - `POST /api/tts` synthesizes the supplied scene through the configured provider.
 - `GET /api/proofreading/config` returns only the safe enabled state, configured language, and text limit.
 - `POST /api/proofreading/check` authorizes the supplied novel and scene for the current identity and checks the unsaved Markdown snapshot without saving it.
+- `GET /api/proofreading/dictionaries?novelId=:id` returns the current user's author dictionary and the owned novel's dictionary.
+- `POST /api/proofreading/dictionaries` adds one validated author- or novel-scoped word; `DELETE` removes one. Mutations use the same origin protections as other authenticated state changes.
 
 Unknown API routes return JSON `404` responses. Invalid JSON returns `400`, oversized input returns `413`, and unexpected server failures do not expose secrets.
 
@@ -179,5 +181,16 @@ Unknown API routes return JSON `404` responses. Invalid JSON returns `400`, over
 - Treat edits, scene/novel changes, and out-of-order responses as stale. A stale suggestion cannot mutate any manuscript.
 - Run LanguageTool in a digest-pinned, unprivileged, read-only container on a dedicated internal Docker network with no host port or Traefik route. Bound requests, responses, concurrency, and timeouts; do not log or persist manuscript text.
 - Support `en-US` initially through server configuration. Checker failure or disablement must not affect editing, saving, narration, preview, or export.
-- Personal dictionaries, continuous/live review, inline decoration, and Literary Intelligence remain future work. Literary Intelligence is context-aware analysis and is not part of mechanical proofreading.
+- Continuous/live review, inline decoration, and Literary Intelligence remain future work. Literary Intelligence is context-aware analysis and is not part of mechanical proofreading.
+
+## Phase 6: author dictionaries and review improvements (decision dated 2026-10-10)
+
+- Persist author-wide and novel-specific dictionary entries in separate, user-owned SQLite tables added by schema version 2. Existing novels migrate additively without document rewrites.
+- Author entries apply to all novels owned by the same `(tenant ID, object ID)`. Novel entries apply only to one novel owned by that identity; cross-user and cross-novel access returns `404` under existing ownership semantics.
+- Accept single Unicode words up to 80 code points, preserving NFC display spelling. Matching uses NFC and `en-US` case folding, is exact rather than substring-based, and permits internal apostrophes and hyphens. Each scope is limited to 500 entries.
+- Suppress only normalized `spelling` findings whose complete matched source equals a dictionary entry. Grammar, punctuation, style, multiword findings, and longer related words remain visible.
+- Allow direct dictionary entry, addition from eligible spelling findings, scoped viewing, and confirmed removal. Dictionary changes never modify manuscript text and explicitly refresh the current requested review when proofreading is available.
+- Provide previous/next issue controls, selected-issue state, safe cross-scene navigation, and visible sequential chapter progress without replacing the native textarea.
+- Retain exact snapshot/novel/scene guards, UTF-16 Markdown mappings, manual review initiation, private provider networking, and graceful unavailable behavior.
+- Maintain a deliberately error-filled diagnostic fixture and record observed LanguageTool coverage separately from deterministic application tests. Missed provider findings are documented rather than synthesized.
 
