@@ -1,6 +1,6 @@
 # Novella proofreading — implementation specification
 
-Status: Implemented (2026-10-10). This is a bounded proofreading feature, not the future Literary Intelligence system.
+Status: Phase 1 implemented (2026-10-10); Phase 2 specified below, not yet implemented. This is a bounded proofreading feature, not the future Literary Intelligence system.
 
 ## Goal
 Provide reliable, private spelling and grammar review sufficient for everyday fiction editing without a Grammarly subscription. Preserve authorial voice, existing Markdown scene editing, and the dependency-light architecture.
@@ -46,8 +46,8 @@ Provide reliable, private spelling and grammar review sufficient for everyday fi
 - Never silently edit text. Ignore and navigation actions must not mutate manuscript content.
 - Stale responses must not overwrite newer review results when switching novels/scenes or editing text.
 
-## Future extension, not this phase
-- Personal dictionary (including character names and invented terms), persisted per user or novel.
+## Future extension beyond Phase 1
+- Personal dictionary (including character names and invented terms), persisted per user or novel: **Phase 2 scope below**.
 - Optional live review with debouncing, incremental checking, and caching.
 - Inline decorations if justified by an editor architecture change.
 - Literary Intelligence: contextual continuity, pacing, arcs, foreshadowing, reader-vs-author knowledge, and evidence-linked observations. These must remain separate from mechanical proofreading, although both can use a common suggestion presentation contract.
@@ -70,5 +70,52 @@ Provide reliable, private spelling and grammar review sufficient for everyday fi
 - LanguageTool has no published host port; the container is isolated from the public proxy.
 - Existing formatting, Markdown preview, narration, export, auth, migration, and multi-novel tests remain green.
 
-## Non-goals
-- No LLM, plot analysis, automatic rewrites, global dictionary, replacement of the existing editor, or new frontend framework in this implementation.
+## Phase 1 non-goals
+- No LLM, plot analysis, automatic rewrites, global dictionary, replacement of the existing editor, or new frontend framework in Phase 1.
+
+## Phase 2 — Author dictionaries and review improvements (planned)
+
+### Objective and scope
+Make proofreading dependable for fiction without turning Novella into a rich-text editor or an AI rewriting tool. Build on the working Phase 1 implementation rather than replacing it. Read the current source, tests, and `AGENTS.md` before coding; verify which Phase 1 features are already present. Keep this phase bounded to dictionaries, review reliability, chapter workflow, and diagnostics. Do **not** implement Literary Intelligence, background/live checking, or inline decorations.
+
+### A. Dictionaries: novel-specific and author-wide
+- Provide **two distinct scopes**: (1) a novel dictionary for names, places, invented words, and terminology belonging to one novel; (2) an author dictionary shared across that author's novels. A word in one novel's dictionary must not silently enter another novel's dictionary.
+- Persist entries in the existing SQLite storage layer with explicit user ownership. Design additive, backward-compatible schema changes for existing databases; do not rewrite stored manuscript content or sample templates.
+- Treat `(tenantId, objectId)` as the durable user identity. Author dictionary entries belong to that user; novel entries belong to a novel authorized through the existing identity-scoped store. Return 404 for another user's novel, consistent with existing behavior.
+- Provide a minimal UI to add a spelling suggestion's original word to either dictionary, view entries by scope, and remove an entry with an accessible confirmation or reversible action. Allow direct entry through the dictionary manager. Do not turn grammar rules or arbitrary multiword passages into dictionary entries by default.
+- Normalize whitespace and Unicode consistently; validate entry length, count, and allowed characters, and define case-sensitivity behavior explicitly. Preserve display spelling. Prevent duplicates according to the documented matching policy. Do not use substring matching: accepting `Caelion` must not suppress an unrelated longer word.
+- On each review, suppress **only relevant spelling/unknown-word findings** matching entries from the authorized author's dictionary and current novel dictionary. Do not suppress grammar, punctuation, or style findings merely because they contain a dictionary word. Prefer deterministic filtering of normalized provider issues over global changes to the shared LanguageTool instance; never let one user's dictionary affect another.
+- Keep dictionary management behind authenticated, same-origin-protected APIs with bounded payloads and no user-controlled upstream provider URLs. Never expose other users' entries. Provide predictable behavior when proofreading is disabled or LanguageTool is unavailable.
+
+### B. Review correctness and usability
+- Audit the existing `Accept`, `Ignore`, and `Ignore in scene` behavior before changing it. An accepted replacement must alter **only** the intended source Markdown span and trigger the established autosave path; ignored findings must never mutate the manuscript.
+- Bind reviews to the exact novel, scene, and source snapshot. On edits, navigation, or out-of-order responses, reject stale suggestions rather than applying uncertain offsets. Confirm UTF-16 source offsets for Unicode/emoji and Markdown syntax; preserve links, fenced code, emphasis, and surrounding punctuation.
+- Improve the issue panel without replacing the native textarea: show category, original excerpt, explanation, replacement choices, and clear previous/next issue navigation. Selecting an issue should focus/select the relevant source range where safe, without losing the author's unsaved edits. Keep keyboard and screen-reader access.
+- Verify whether `Proofread chapter` and scene navigation already exist. Implement or repair only what is missing: bounded per-scene checking, grouped results by scene, clear progress/error states, and navigation that never mixes findings from different scenes. Do not silently rewrite a chapter.
+- Keep proofreading explicitly user-triggered. Do not add automatic network checks on every keystroke in Phase 2.
+
+### C. Quality diagnostics
+- Add deterministic tests for the complete request/projection/response pipeline. Verify that the current full scene snapshot, configured language (default `en-US`), and expected provider settings are sent correctly; check for accidental truncation, filtering, or offset mistakes.
+- Use the deliberately error-filled test passage as a **diagnostic fixture**, not a guarantee that LanguageTool will identify every error. Document which findings come from LanguageTool's rules and which are missed; do not invent corrections or misrepresent detection rates.
+- Keep provider-neutral issue normalization, private internal checker networking, bounded requests/timeouts, sanitized errors, and graceful checker-unavailable behavior. No new external proofreading service.
+
+### D. Acceptance criteria and verification
+1. An author can add an invented word from a spelling finding to the current novel dictionary; subsequent reviews of that novel suppress the matching spelling finding, while grammar findings remain.
+2. An author can add a word to their author dictionary and use it across their own novels; another authenticated user cannot read, modify, or benefit from those entries.
+3. Dictionary entries survive process/container restarts and existing SQLite databases migrate without loss. Duplicate, invalid, and excessive entries are rejected safely.
+4. Removing a word causes its spelling finding to become eligible again on the next review. Dictionary changes do not alter manuscript text.
+5. Accepting a correction preserves unrelated Markdown, triggers autosave, and persists after reload. Stale review results cannot edit the wrong text, scene, or novel.
+6. Chapter review checks every eligible scene with bounded work, correctly attributes issues, handles an unavailable checker gracefully, and supports safe navigation.
+7. Firefox and Safari expose the same Novella proofreading controls after loading the current application assets; native OS Writing Tools remain optional and are not a dependency.
+8. Tests cover user/novel isolation, schema upgrades, normalization, Unicode offsets, stale requests, cross-scene navigation, disabled checker, and regressions. Run `npm test`; run `docker compose config --quiet` when available. Verify the Dockerfile copies all runtime modules (including `proofreading/`).
+9. Update `README.md`, `docs/SPEC.md`, and relevant deployment documentation for behavior that actually changes. Keep secrets and user data out of commits.
+
+### Suggested Codex delivery order
+1. **Audit** current Phase 1 implementation against this specification; list already-complete functionality and gaps before editing.
+2. **Storage and tests** for isolated author/novel dictionary entries, including migration from an existing database.
+3. **Dictionary APIs and UI** with explicit scope selection and safe spelling-only filtering.
+4. **Review hardening** for safe acceptance, stale findings, issue navigation, and chapter review gaps.
+5. **Diagnostics, documentation, and deployment verification**; report tests run, remaining limitations, and any deferred features.
+
+### Deferred beyond Phase 2
+Optional debounced live proofreading; inline annotations requiring an explicitly evaluated editor approach; configurable languages beyond the initial default; manuscript-aware Literary Intelligence and structured Story Model. None is a prerequisite for completing Phase 2.
