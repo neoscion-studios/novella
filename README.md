@@ -36,4 +36,4 @@ npm test
 
 ## Private deployment
 
-The included [Compose stack](compose.yml) runs Novella behind Traefik and Let's Encrypt with Microsoft Entra ID authentication. It also runs LanguageTool on an isolated internal network with no published checker port. Follow the complete [deployment guide](docs/deployment.md) before exposing the host to the internet.
+The included [Compose stack](compose.yaml) connects Novella to Neoscion's separately managed shared Caddy network with Microsoft Entra ID authentication. It publishes no host ports and runs LanguageTool on an isolated internal network. Follow the complete [deployment guide](docs/deployment.md) before exposing the application to the internet.

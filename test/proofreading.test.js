@@ -352,15 +352,23 @@ test('disabled and failed checkers leave proofreading requests safe and usable',
   assert.equal(disabledAdd.status, 201);
 });
 
-test('Compose keeps LanguageTool private, isolated, and digest-pinned', async () => {
-  const compose = await fs.readFile(path.join(__dirname, '..', 'compose.yml'), 'utf8');
+test('Compose connects only Novella to shared Caddy and keeps LanguageTool private', async () => {
+  const compose = await fs.readFile(path.join(__dirname, '..', 'compose.yaml'), 'utf8');
+  const application = compose.slice(compose.indexOf('  novella:'), compose.indexOf('  languagetool:'));
   const checker = compose.slice(compose.indexOf('  languagetool:'), compose.indexOf('\nnetworks:'));
+  assert.match(application, /read_only: true/);
+  assert.match(application, /web:\n\s+aliases:\n\s+- novella-app/);
+  assert.match(application, /proofreading: \{\}/);
+  assert.doesNotMatch(application, /\n\s+ports:/);
+  assert.doesNotMatch(application, /\n\s+labels:/);
   assert.match(checker, /image: erikvl87\/languagetool:6\.8@sha256:[a-f0-9]{64}/);
   assert.match(checker, /read_only: true/);
   assert.match(checker, /- proofreading/);
   assert.doesNotMatch(checker, /\n\s+ports:/);
-  assert.doesNotMatch(checker, /traefik/);
+  assert.doesNotMatch(checker, /- web/);
+  assert.match(compose, /web:\n\s+name: web\n\s+external: true/);
   assert.match(compose, /proofreading:\n\s+name: novella_proofreading\n\s+internal: true/);
+  assert.doesNotMatch(compose, /traefik|letsencrypt|docker\.sock|ACME_EMAIL|NOVELLA_HOST/iu);
   const dockerfile = await fs.readFile(path.join(__dirname, '..', 'Dockerfile'), 'utf8');
   assert.match(dockerfile, /COPY --chown=node:node proofreading \.\/proofreading/);
 });

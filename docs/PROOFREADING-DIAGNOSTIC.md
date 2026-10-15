@@ -5,7 +5,7 @@ This diagnostic records observed behavior; it is not a detection-rate promise or
 ## Verified environment
 
 - Date: 2026-10-10
-- Checker: LanguageTool 6.8, the digest pinned in `compose.yml`
+- Checker: LanguageTool 6.8, the digest pinned in `compose.yaml`
 - Language: `en-US`
 - Input: Novella's Markdown plain-text projection, not raw Markdown
 - Network/runtime: the private read-only checker configuration documented in `docs/deployment.md`

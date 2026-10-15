@@ -89,7 +89,7 @@ Each chapter has a stable ID, title, optional summary, and scenes. Each scene ha
 ### Private hosting
 
 - Package the application in a non-root Node.js container.
-- Supply a Docker Compose deployment behind Traefik with automatic HTTPS.
+- Supply a Docker Compose deployment behind the separately managed shared Caddy edge with automatic HTTPS. (Later deployment decision: replaces the original standalone Traefik design.)
 - Do not publish the application port directly in the production stack.
 - Run the application container with a read-only root filesystem, dropped capabilities, `no-new-privileges`, and a writable mounted data directory.
 - Expose a minimal unauthenticated health response at `/api/health`.
@@ -179,7 +179,7 @@ Unknown API routes return JSON `404` responses. Invalid JSON returns `400`, over
 - Present categories, excerpts, explanations, replacements, and review-scoped ignore actions. Never rewrite automatically or persist a dictionary in this phase.
 - Bind every review to the exact novel, scene, and source snapshot. Accept only when identity, active context, offsets, and original text still match; use the textarea editing path and input event so autosave remains authoritative.
 - Treat edits, scene/novel changes, and out-of-order responses as stale. A stale suggestion cannot mutate any manuscript.
-- Run LanguageTool in a digest-pinned, unprivileged, read-only container on a dedicated internal Docker network with no host port or Traefik route. Bound requests, responses, concurrency, and timeouts; do not log or persist manuscript text.
+- Run LanguageTool in a digest-pinned, unprivileged, read-only container on a dedicated internal Docker network with no host port or Caddy route. Bound requests, responses, concurrency, and timeouts; do not log or persist manuscript text.
 - Support `en-US` initially through server configuration. Checker failure or disablement must not affect editing, saving, narration, preview, or export.
 - Continuous/live review, inline decoration, and Literary Intelligence remain future work. Literary Intelligence is context-aware analysis and is not part of mechanical proofreading.
 

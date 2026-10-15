@@ -8,7 +8,7 @@ test
 coverage
 node_modules
 npm-debug.log*
-compose.yml
+compose.yaml
 Dockerfile
 README.md
 initialize.md

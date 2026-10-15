@@ -16,7 +16,7 @@ Use Node.js 24 or newer.
 - `test/`: Node test-runner coverage for server, auth/isolation, and migration.
 - `data/samples/`: immutable templates copied into new user libraries.
 - `docs/`: reconstructed product specification and deployment documentation.
-- `compose.yml` and `Dockerfile`: hardened private deployment behind Traefik.
+- `compose.yaml` and `Dockerfile`: hardened private deployment behind the separately managed shared Caddy edge.
 
 ## Common commands
 

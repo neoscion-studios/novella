@@ -1,44 +1,6 @@
 name: novella
 
 services:
-  traefik:
-    image: traefik:v3.7
-    restart: unless-stopped
-    init: true
-    security_opt:
-      - no-new-privileges:true
-    command:
-      - --global.checknewversion=false
-      - --global.sendanonymoususage=false
-      - --api.dashboard=false
-      - --ping=true
-      - --accesslog=true
-      - --log.level=INFO
-      - --providers.docker=true
-      - --providers.docker.exposedbydefault=false
-      - --providers.docker.network=novella_proxy
-      - --entrypoints.web.address=:80
-      - --entrypoints.web.http.redirections.entrypoint.to=websecure
-      - --entrypoints.web.http.redirections.entrypoint.scheme=https
-      - --entrypoints.websecure.address=:443
-      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?Set ACME_EMAIL in .env}
-      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
-      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
-      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
-    ports:
-      - 80:80
-      - 443:443
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik_certificates:/letsencrypt
-    networks:
-      - proxy
-    healthcheck:
-      test: [CMD, traefik, healthcheck, --ping]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
   novella:
     build:
       context: .
@@ -76,25 +38,10 @@ services:
     tmpfs:
       - /tmp:size=16m,mode=1777
     networks:
-      - proxy
-      - proofreading
-    labels:
-      traefik.enable: "true"
-      traefik.docker.network: novella_proxy
-      traefik.http.services.novella.loadbalancer.server.port: "4173"
-      traefik.http.routers.novella.rule: Host(`${NOVELLA_HOST:?Set NOVELLA_HOST in .env}`)
-      traefik.http.routers.novella.entrypoints: websecure
-      traefik.http.routers.novella.priority: "10"
-      traefik.http.routers.novella.tls: "true"
-      traefik.http.routers.novella.tls.certresolver: letsencrypt
-      traefik.http.routers.novella.service: novella
-      traefik.http.routers.novella.middlewares: security-headers@docker
-
-      traefik.http.middlewares.security-headers.headers.stsseconds: "31536000"
-      traefik.http.middlewares.security-headers.headers.contenttypenosniff: "true"
-      traefik.http.middlewares.security-headers.headers.framedeny: "true"
-      traefik.http.middlewares.security-headers.headers.referrerpolicy: no-referrer
-      traefik.http.middlewares.security-headers.headers.permissionspolicy: camera=(), microphone=(), geolocation=()
+      web:
+        aliases:
+          - novella-app
+      proofreading: {}
 
   languagetool:
     image: erikvl87/languagetool:6.8@sha256:ef8fa12cbd485166c9ceeb7139d76d56d07707a624da6bb1fc1fbb5411750527
@@ -125,11 +72,9 @@ services:
       start_period: 45s
 
 networks:
-  proxy:
-    name: novella_proxy
+  web:
+    name: web
+    external: true
   proofreading:
     name: novella_proofreading
     internal: true
-
-volumes:
-  traefik_certificates:

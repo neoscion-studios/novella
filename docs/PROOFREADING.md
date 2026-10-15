@@ -11,12 +11,12 @@ Provide reliable, private spelling and grammar review sufficient for everyday fi
 - The Write editor is a native `textarea.scene-content[data-scene-field="content"]`; Preview is rendered separately. Native textarea text cannot contain individually styled inline underlines. Do **not** claim that server findings can be underlined in the textarea without replacing or overlaying the editor.
 - Scene content lives inside the per-user novel JSON stored in SQLite; chapter summaries, scene synopses, characters, and locations are existing metadata.
 - Debounced full-project autosave and origin/session protections already exist.
-- Compose uses Traefik and the `novella_proxy` network.
+- Compose connects Novella to the external shared-Caddy `web` network.
 
 ## Architectural contract
 1. Keep the proofreading API provider-neutral. Define an internal adapter with `check({text, language}) -> normalized issues`; LanguageTool is the initial adapter. Do not expose LanguageTool-specific payloads to browser code.
 2. Run LanguageTool in a separate, pinned, maintained container with its own JVM; no Java dependency, runtime, or client library inside Novella or on the host.
-3. Place Novella and LanguageTool on a dedicated **internal** Docker network. No published LanguageTool ports, no Traefik route or external ingress, no browser-to-LanguageTool requests. Keep Novella's existing proxy connectivity.
+3. Place Novella and LanguageTool on a dedicated **internal** Docker network. No published LanguageTool ports, Caddy route, external ingress, or browser-to-LanguageTool requests. Keep Novella's shared-Caddy connectivity.
 4. Configure internal URL, enable flag, request timeout, and language via environment variables. Fail gracefully when disabled or unavailable. Local `npm start` works without Docker.
 5. Choose and verify a maintained image/version and its license, writable paths, health behavior, and resource needs before pinning a digest. Do not blindly copy a third-party example image or assume read-only mode works.
 6. Manuscript text sent for checking must not be persisted or logged by Novella or the checker. Disable unnecessary request logging and keep errors sanitized. Limit request sizes, response sizes, concurrency, and timeouts; never allow arbitrary upstream URLs from clients.
@@ -67,7 +67,7 @@ Provide reliable, private spelling and grammar review sufficient for everyday fi
 - Modified text, scene switches, novel switches, out-of-order responses, and stale offsets never cause edits in the wrong location.
 - A second authenticated user cannot request another user's novel; unauthorized/invalid requests fail without leaking novel existence.
 - Checker stopped, misconfigured, timed out, or returning malformed data: Novella remains usable; browser spellcheck, autosave, and export work.
-- LanguageTool has no published host port; the container is isolated from the public proxy.
+- LanguageTool has no published host port and does not join the shared proxy network.
 - Existing formatting, Markdown preview, narration, export, auth, migration, and multi-novel tests remain green.
 
 ## Phase 1 non-goals
