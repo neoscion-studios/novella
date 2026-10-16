@@ -356,6 +356,7 @@ test('Compose connects only Novella to shared Caddy and keeps LanguageTool priva
   const compose = await fs.readFile(path.join(__dirname, '..', 'compose.yaml'), 'utf8');
   const application = compose.slice(compose.indexOf('  novella:'), compose.indexOf('  languagetool:'));
   const checker = compose.slice(compose.indexOf('  languagetool:'), compose.indexOf('\nnetworks:'));
+  assert.match(application, /user: "\$\{NOVELLA_UID:-1000\}:\$\{NOVELLA_GID:-1000\}"/);
   assert.match(application, /read_only: true/);
   assert.match(application, /web:\n\s+aliases:\n\s+- novella-app/);
   assert.match(application, /proofreading: \{\}/);
@@ -366,11 +367,13 @@ test('Compose connects only Novella to shared Caddy and keeps LanguageTool priva
   assert.match(checker, /- proofreading/);
   assert.doesNotMatch(checker, /\n\s+ports:/);
   assert.doesNotMatch(checker, /- web/);
+  assert.doesNotMatch(checker, /NOVELLA_(?:UID|GID)/);
   assert.match(compose, /web:\n\s+name: web\n\s+external: true/);
   assert.match(compose, /proofreading:\n\s+name: novella_proofreading\n\s+internal: true/);
   assert.doesNotMatch(compose, /traefik|letsencrypt|docker\.sock|ACME_EMAIL|NOVELLA_HOST/iu);
   const dockerfile = await fs.readFile(path.join(__dirname, '..', 'Dockerfile'), 'utf8');
   assert.match(dockerfile, /COPY --chown=node:node proofreading \.\/proofreading/);
+  assert.doesNotMatch(dockerfile, /(?:ARG|ENV) NOVELLA_(?:UID|GID)/);
 });
 
 test('current browser assets expose proofreading and dictionary controls without a browser-specific dependency', async () => {

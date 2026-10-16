@@ -55,6 +55,8 @@ Configure authentication and storage:
 AUTH_REQUIRED=true
 SESSION_SECRET=replace-with-the-generated-value
 DATABASE_FILE=/app/data/novella.sqlite
+NOVELLA_UID=replace-with-output-of-id-u-novella
+NOVELLA_GID=replace-with-output-of-id-g-novella
 ENTRA_TENANT_ID=your-tenant-guid
 ENTRA_CLIENT_ID=your-application-client-id
 ENTRA_CLIENT_SECRET=your-client-secret-value
@@ -65,6 +67,8 @@ ENTRA_POST_LOGOUT_REDIRECT_URI=https://novella.neoscion.com/
 The redirect URI is also Novella's trusted public origin. The application does not use arbitrary `Forwarded` or `X-Forwarded-*` values for cookie security or same-origin decisions. With the production HTTPS redirect configured, session cookies remain `Secure`, `HttpOnly`, and `SameSite=Lax`; state-changing requests continue to require the configured origin, and logout retains its session-bound CSRF token.
 
 Rotating `SESSION_SECRET` signs out every session but does not affect manuscripts or database ownership.
+
+`NOVELLA_UID` and `NOVELLA_GID` select the application container's numeric runtime identity; they are not image build arguments. The local defaults are `1000:1000`, but production must use the system-assigned IDs of the dedicated host `novella` account described below. The numeric identity does not need a named entry in the image's `/etc/passwd`.
 
 Proofreading is enabled in Compose by default:
 
@@ -86,13 +90,32 @@ The stack preserves the digest-pinned `erikvl87/languagetool` 6.8 image. Languag
 
 ## 3. Prepare persistent data
 
-The repository's `./data` directory is bind-mounted at `/app/data`, and the database remains `/app/data/novella.sqlite`. Before first start, make the directory writable by the image's existing `node` user without making it world-writable. Confirm the UID/GID from the built image if the base image changes; it is currently 1000:1000.
+The repository's `./data` directory is bind-mounted at `/app/data`, and the database remains `/app/data/novella.sqlite`. On the production Web host, create a dedicated unprivileged account with system-assigned IDs. Do not assign it sudo access, add it to the `docker` group, or modify the existing UID 1000, 1001, or 1002 accounts.
 
 ```sh
-mkdir -p data
-sudo chown -R 1000:1000 data
+sudo groupadd --system novella
+sudo useradd --system --gid novella --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin novella
+id novella
+id -u novella
+id -g novella
+```
+
+If either account-creation command reports that `novella` already exists, inspect that existing account rather than replacing it. Confirm that its shell is non-interactive and that `id novella` lists neither `sudo` nor `docker`. Put the numeric outputs of `id -u novella` and `id -g novella` in production `.env`; never assume production uses UID or GID 1000.
+
+Give this identity write access only to the bind-mounted SQLite data directory. From the repository root:
+
+```sh
+sudo install -d -o novella -g novella -m 0750 data
+```
+
+For a restored database, scope any recursive ownership correction to `data` only:
+
+```sh
+sudo chown -R -- novella:novella data
 sudo chmod 750 data
 ```
+
+Do not chown the source tree, Dockerfile, Compose file, or `.env`. Keep `.env` owned by the deployment administrator with mode `0600`; Docker Compose reads it before starting the container. The container continues to run non-root with a read-only root filesystem, while only `/app/data` and the existing temporary filesystem are writable.
 
 Do not place production data in Git or start a second writable Novella instance against a copied or shared database.
 
@@ -214,7 +237,7 @@ To restore on a new host:
 1. Keep the destination Novella service stopped.
 2. Preserve any existing destination database; never overwrite it without a verified backup.
 3. Copy the consistent backup and any required WAL/SHM companions into `./data`.
-4. Set ownership to UID/GID 1000 and restrictive permissions.
+4. Set ownership of `./data` and its restored contents to the dedicated host `novella` account, keep the directory restrictive, and set `NOVELLA_UID`/`NOVELLA_GID` from `id -u novella` and `id -g novella`.
 5. Run `sqlite3 data/novella.sqlite 'PRAGMA integrity_check;'` before starting the app.
 6. Start Novella and complete the verification checklist.
 

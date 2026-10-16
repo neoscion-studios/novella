@@ -18,6 +18,8 @@ Use Node.js 24 or newer.
 - `docs/`: reconstructed product specification and deployment documentation.
 - `compose.yaml` and `Dockerfile`: hardened private deployment behind the separately managed shared Caddy edge.
 
+The Novella service's Compose runtime identity is configured with numeric `NOVELLA_UID` and `NOVELLA_GID` values. Local development defaults to `1000:1000`; production must use the system-assigned IDs of the dedicated unprivileged host `novella` account. These are runtime settings, not Docker image build arguments. Limit that account's writable host access to `./data`, and do not change LanguageTool's identity.
+
 ## Common commands
 
 ```sh
@@ -65,6 +67,7 @@ The app defaults to `http://127.0.0.1:4173`. Local development does not require 
 - For storage/auth changes, test both the intended user and a second identity, including read, update, delete, and export paths.
 - For schema or migration changes, verify fresh initialization, existing database compatibility, idempotent import, conflict handling, and preservation of legacy inputs.
 - For deployment changes, also run `docker compose config --quiet` when Docker/Compose is available.
+- For runtime-identity changes, also verify SQLite write, container restart, and read-back with non-1000 numeric UID/GID values that need not exist in the image's `/etc/passwd`.
 
 ## Documentation expectations
 
