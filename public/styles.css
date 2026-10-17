@@ -93,7 +93,7 @@ button { color: inherit; }
   background: var(--accent);
 }
 
-.top-actions { display: flex; justify-content: flex-end; align-items: center; gap: 18px; }
+.top-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
 .auth-info { display: flex; align-items: center; gap: 9px; }
 .auth-user { max-width: 150px; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .auth-info form { margin: 0; }
@@ -122,6 +122,9 @@ button { color: inherit; }
   cursor: pointer;
   transition: transform .15s, background .15s;
 }
+.export-button { border: 0; cursor: pointer; font: inherit; white-space: nowrap; }
+.export-button.secondary-action { color: var(--text); background: var(--paper-dark); }
+.export-button.secondary-action:hover { background: var(--line); }
 .export-button:hover, .button:hover { background: var(--accent-dark); transform: translateY(-1px); }
 .export-button svg { width: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -448,6 +451,8 @@ button { color: inherit; }
 .dialog-icon { display: grid; place-items: center; width: 42px; height: 42px; margin: 0 auto 17px; border-radius: 50%; background: #f5e3df; color: #a84235; font-family: var(--serif); font-size: 23px; }
 .dialog h2 { margin: 0 0 8px; font-family: var(--serif); font-size: 24px; font-weight: 500; }
 .dialog p { margin: 0 0 25px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.dialog.import-dialog { width: min(500px, calc(100% - 32px)); }
+.dialog .import-icon { color: var(--accent); background: var(--paper-dark); }
 .dialog-actions { display: flex; justify-content: center; gap: 10px; }
 
 .toast { position: fixed; right: 24px; bottom: 24px; z-index: 40; padding: 11px 16px; border-radius: 9px; background: var(--ink); color: white; box-shadow: var(--shadow); opacity: 0; transform: translateY(12px); pointer-events: none; transition: .2s; font-size: 12px; }
@@ -460,8 +465,8 @@ button { color: inherit; }
   .topbar { grid-template-columns: auto 1fr; height: auto; min-height: 62px; padding: 12px 16px; }
   .brand span:last-child, .save-status, .auth-user { display: none; }
   .primary-nav { grid-row: 2; grid-column: 1 / -1; justify-content: center; height: 39px; order: 3; }
-  .top-actions { gap: 8px; }
-  .export-button { min-height: 36px; padding: 0 11px; }
+  .top-actions { flex-wrap: wrap; gap: 7px; padding: 4px 0; }
+  .export-button { min-height: 34px; padding: 0 9px; font-size: 11px; }
   .manuscript-layout { grid-template-columns: 1fr; }
   .outline { position: relative; top: 0; height: auto; max-height: 300px; border-right: 0; border-bottom: 1px solid var(--line); }
   .outline-list { max-height: 190px; }

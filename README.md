@@ -27,6 +27,16 @@ When ElevenLabs is configured, the **Listen** button reads the current scene alo
 
 Exports use level-one headings for the book title and level-two headings for chapters. Scene names stay private to the workspace; written scenes are separated with `* * *`, and headings inside scene text are shifted down two levels to preserve the manuscript hierarchy.
 
+## Project portability
+
+The top bar provides three distinct actions:
+
+- **Export Manuscript (.md)** creates the existing publication-oriented Markdown manuscript.
+- **Export Project (.json)** saves a lossless, versioned Novella Project containing the current novel, its planning metadata, and its novel-specific dictionary.
+- **Import Project (.json)** validates and previews a project before importing it as a new novel.
+
+Both exports wait for pending autosaves. Import never overwrites an existing novel and does not modify the selected source file. Author-wide dictionary entries are not part of a novel project export. See the [Novella Project format](docs/PROJECT-FORMAT.md) for the exact schema, limits, compatibility rules, and endpoints.
+
 ## Development
 
 ```sh

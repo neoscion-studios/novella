@@ -28,10 +28,13 @@
             </form>
           </div>
           <span id="saveStatus" class="save-status"><span class="status-dot"></span> Saved</span>
-          <a class="export-button" href="/api/export" download>
+          <button class="export-button" type="button" data-export-manuscript>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg>
-            Export
-          </a>
+            Export Manuscript (.md)
+          </button>
+          <button class="export-button secondary-action" type="button" data-export-project>Export Project (.json)</button>
+          <button class="export-button secondary-action" type="button" data-import-project>Import Project (.json)</button>
+          <input id="projectImportFile" type="file" accept=".json,application/json" hidden />
         </div>
       </header>
 
@@ -49,6 +52,17 @@
         <div class="dialog-actions">
           <button value="cancel" class="button secondary">Keep it</button>
           <button value="confirm" class="button danger">Delete</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="importDialog" class="dialog import-dialog">
+      <form method="dialog">
+        <div class="dialog-icon import-icon">↥</div>
+        <h2>Import as a new novel?</h2>
+        <p id="importSummary">Review the project before importing it.</p>
+        <div class="dialog-actions">
+          <button value="cancel" class="button secondary">Cancel</button>
+          <button value="confirm" class="button">Import new novel</button>
         </div>
       </form>
     </dialog>

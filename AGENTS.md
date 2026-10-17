@@ -11,6 +11,7 @@ Use Node.js 24 or newer.
 - `server.js`: HTTP routing, project validation, Markdown export, narration proxy, and app composition.
 - `auth.js`: optional local mode and Microsoft Entra OIDC/session/CSRF behavior.
 - `storage.js`: SQLite schema and user-scoped novel persistence.
+- `project-format.js`: strict, versioned Novella Project JSON validation and summaries.
 - `legacy-import.js` and `scripts/migrate-json-to-sqlite.js`: non-destructive JSON migration.
 - `public/`: browser UI, styles, and safe Markdown renderer.
 - `test/`: Node test-runner coverage for server, auth/isolation, and migration.

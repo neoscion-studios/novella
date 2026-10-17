@@ -113,6 +113,10 @@ class SqliteStore {
       selectNovel: this.database.prepare(`
         SELECT project_json FROM novels WHERE user_id = ? AND id = ?
       `),
+      selectNovelRecord: this.database.prepare(`
+        SELECT id, project_json, created_at, updated_at
+        FROM novels WHERE user_id = ? AND id = ?
+      `),
       insertNovel: this.database.prepare(`
         INSERT INTO novels
           (user_id, id, title, author, project_json, created_at, updated_at)
@@ -129,6 +133,10 @@ class SqliteStore {
       `),
       listNovelDictionary: this.database.prepare(`
         SELECT display_entry AS entry, normalized_entry AS normalized
+        FROM novel_dictionary_entries WHERE user_id = ? AND novel_id = ? ORDER BY normalized_entry
+      `),
+      exportNovelDictionary: this.database.prepare(`
+        SELECT display_entry AS entry, created_at AS createdAt
         FROM novel_dictionary_entries WHERE user_id = ? AND novel_id = ? ORDER BY normalized_entry
       `),
       countAuthorDictionary: this.database.prepare('SELECT COUNT(*) AS count FROM author_dictionary_entries WHERE user_id = ?'),
@@ -191,6 +199,21 @@ class SqliteStore {
     return JSON.parse(row.project_json);
   }
 
+  exportProject(identity, id) {
+    const user = this.userFor(identity);
+    return this.transaction(() => {
+      const row = this.statements.selectNovelRecord.get(user.id, id);
+      if (!row) throw notFound();
+      return {
+        id: row.id,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        project: JSON.parse(row.project_json),
+        dictionary: this.statements.exportNovelDictionary.all(user.id, id)
+      };
+    });
+  }
+
   create(identity, project) {
     const user = this.userFor(identity);
     const now = new Date().toISOString();
@@ -208,6 +231,44 @@ class SqliteStore {
       created_at: now,
       updated_at: now
     }), project };
+  }
+
+  importProject(identity, envelope) {
+    const user = this.userFor(identity);
+    return this.transaction(() => {
+      let id;
+      do id = `novel-${randomUUID()}`;
+      while (this.statements.selectNovel.get(user.id, id));
+
+      const project = envelope.novel.project;
+      const record = {
+        id,
+        project,
+        createdAt: envelope.novel.createdAt,
+        updatedAt: envelope.novel.updatedAt
+      };
+      this.insertRecord(this.statements.insertNovel, user.id, record);
+      for (const entry of envelope.dictionaries.novel) {
+        const normalized = normalizeDictionaryEntry(entry.entry);
+        this.statements.insertNovelDictionaryEntry.run(
+          user.id,
+          id,
+          normalized.normalized,
+          normalized.entry,
+          entry.createdAt
+        );
+      }
+      return {
+        novel: summary({
+          id,
+          title: project.title,
+          author: project.author,
+          created_at: record.createdAt,
+          updated_at: record.updatedAt
+        }),
+        project
+      };
+    });
   }
 
   save(identity, id, project) {

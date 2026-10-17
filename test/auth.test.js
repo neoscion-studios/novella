@@ -309,6 +309,9 @@ test('isolates every novel operation by Entra tenant and object ID', async (t) =
   const crossUserExport = await fetch(`${base}/api/novels/${created.novel.id}/export`, { headers: { Cookie: secondCookie } });
   assert.equal(crossUserExport.status, 404);
 
+  const crossUserProjectExport = await fetch(`${base}/api/novels/${created.novel.id}/project-export`, { headers: { Cookie: secondCookie } });
+  assert.equal(crossUserProjectExport.status, 404);
+
   const crossUserProofread = await fetch(`${base}/api/proofreading/check`, {
     method: 'POST',
     headers: {
@@ -372,6 +375,36 @@ test('isolates author and novel dictionaries by stable identity', async (t) => {
     body: JSON.stringify({ novelId: firstNovelId, scope: 'author', entry: 'Caelion' })
   });
   assert.equal(crossUserDelete.status, 404);
+});
+
+test('protects portable import with origin checks and assigns destination ownership', async (t) => {
+  const { server, base } = await startTestApp();
+  t.after(() => server.close());
+  const firstCookie = sessionCookieFor('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  const secondCookie = sessionCookieFor('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+  const source = await fs.readFile(path.join(__dirname, 'fixtures', 'novella-project-v1.json'), 'utf8');
+
+  const denied = await fetch(`${base}/api/projects/import`, {
+    method: 'POST',
+    headers: { Cookie: secondCookie, 'Content-Type': 'application/json' },
+    body: source
+  });
+  assert.equal(denied.status, 403);
+
+  const importedResponse = await fetch(`${base}/api/projects/import`, {
+    method: 'POST',
+    headers: { Cookie: secondCookie, Origin: 'http://localhost:4173', 'Content-Type': 'application/json' },
+    body: source
+  });
+  assert.equal(importedResponse.status, 201);
+  const imported = await importedResponse.json();
+
+  const ownerRead = await fetch(`${base}/api/novels/${imported.novel.id}`, { headers: { Cookie: secondCookie } });
+  assert.equal(ownerRead.status, 200);
+  const otherRead = await fetch(`${base}/api/novels/${imported.novel.id}`, { headers: { Cookie: firstCookie } });
+  assert.equal(otherRead.status, 404);
+  const otherExport = await fetch(`${base}/api/novels/${imported.novel.id}/project-export`, { headers: { Cookie: firstCookie } });
+  assert.equal(otherExport.status, 404);
 });
 
 test('refuses incomplete production authentication configuration', () => {

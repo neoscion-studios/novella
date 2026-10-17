@@ -1,0 +1,54 @@
+{
+  "format": "novella-project",
+  "version": 1,
+  "exportedAt": "2026-10-16T12:00:00.000Z",
+  "novel": {
+    "id": "novel-portable-example",
+    "createdAt": "2026-10-01T12:00:00.000Z",
+    "updatedAt": "2026-10-16T11:30:00.000Z",
+    "project": {
+      "version": 1,
+      "title": "The Élan Archive",
+      "author": "Example Author",
+      "chapters": [
+        {
+          "id": "chapter-opening",
+          "title": "Opening",
+          "summary": "The archive opens.",
+          "scenes": [
+            {
+              "id": "scene-arrival",
+              "title": "Arrival",
+              "synopsis": "A visitor finds the first record.",
+              "content": "# The door\n\nShe read **Caelion** in the margin."
+            }
+          ]
+        }
+      ],
+      "characters": [
+        {
+          "id": "character-visitor",
+          "name": "Mara",
+          "role": "Archivist",
+          "description": "Keeps notes in English and Ελληνικά."
+        }
+      ],
+      "locations": [
+        {
+          "id": "location-archive",
+          "name": "The Archive",
+          "role": "Library",
+          "description": "A quiet room beneath the city."
+        }
+      ]
+    }
+  },
+  "dictionaries": {
+    "novel": [
+      {
+        "entry": "Caelion",
+        "createdAt": "2026-10-15T09:00:00.000Z"
+      }
+    ]
+  }
+}

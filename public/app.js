@@ -5,6 +5,10 @@ const authUser = document.querySelector('#authUser');
 const csrfToken = document.querySelector('#csrfToken');
 const toast = document.querySelector('#toast');
 const confirmDialog = document.querySelector('#confirmDialog');
+const importDialog = document.querySelector('#importDialog');
+const importSummary = document.querySelector('#importSummary');
+const projectImportFile = document.querySelector('#projectImportFile');
+const PROJECT_IMPORT_MAX_BYTES = 20 * 1024 * 1024;
 
 let project = null;
 let currentView = 'manuscript';
@@ -1122,16 +1126,85 @@ app.addEventListener('dragend', () => {
   document.querySelectorAll('.dragging, .drop-before').forEach((item) => item.classList.remove('dragging', 'drop-before'));
 });
 
-document.querySelector('.export-button').addEventListener('click', async (event) => {
-  event.preventDefault();
-  if (!(await saveNow())) return;
+function startDownload(url) {
   const link = document.createElement('a');
-  link.href = `/api/novels/${encodeURIComponent(activeNovelId)}/export?t=${Date.now()}`;
+  link.href = url;
   link.download = '';
   document.body.appendChild(link);
   link.click();
   link.remove();
+}
+
+document.querySelector('[data-export-manuscript]').addEventListener('click', async () => {
+  if (!(await saveNow())) return;
+  startDownload(`/api/novels/${encodeURIComponent(activeNovelId)}/export?t=${Date.now()}`);
   showToast('Markdown export created');
+});
+
+document.querySelector('[data-export-project]').addEventListener('click', async () => {
+  if (!(await saveNow())) return;
+  startDownload(`/api/novels/${encodeURIComponent(activeNovelId)}/project-export?t=${Date.now()}`);
+  showToast('Project export created');
+});
+
+document.querySelector('[data-import-project]').addEventListener('click', () => {
+  projectImportFile.value = '';
+  projectImportFile.click();
+});
+
+function confirmProjectImport(preview) {
+  const byline = preview.author ? ` by ${preview.author}` : '';
+  const dictionaryCount = `${preview.dictionaryEntries.toLocaleString()} novel dictionary ${preview.dictionaryEntries === 1 ? 'entry' : 'entries'}`;
+  importSummary.textContent = `“${preview.title || 'Untitled novel'}”${byline} contains ${pluralize(preview.chapters, 'chapter')}, ${pluralize(preview.scenes, 'scene')}, ${pluralize(preview.characters, 'character')}, ${pluralize(preview.locations, 'location')}, and ${dictionaryCount}. Your existing novels will not be changed.`;
+  importDialog.showModal();
+  return new Promise((resolve) => {
+    importDialog.addEventListener('close', () => resolve(importDialog.returnValue === 'confirm'), { once: true });
+  });
+}
+
+projectImportFile.addEventListener('change', async () => {
+  const file = projectImportFile.files?.[0];
+  if (!file) return;
+  if (file.size > PROJECT_IMPORT_MAX_BYTES) return showToast('Project files are limited to 20 MiB.');
+  if (!(await saveNow())) return;
+
+  try {
+    const source = await file.text();
+    const previewResponse = await fetch('/api/projects/import/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: source
+    });
+    const previewResult = await previewResponse.json().catch(() => ({ error: 'The project file could not be read.' }));
+    if (!previewResponse.ok) throw new Error(previewResult.error || 'The project file is invalid.');
+    if (!(await confirmProjectImport(previewResult.preview))) return;
+
+    const importResponse = await fetch('/api/projects/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: source
+    });
+    const imported = await importResponse.json().catch(() => ({ error: 'The project could not be imported.' }));
+    if (!importResponse.ok) throw new Error(imported.error || 'The project could not be imported.');
+
+    discardNarration();
+    const catalogResponse = await fetch('/api/novels');
+    if (!catalogResponse.ok) throw new Error('The imported novel could not be opened.');
+    novels = (await catalogResponse.json()).novels;
+    project = imported.project;
+    activeNovelId = imported.novel.id;
+    activeSceneId = firstSceneId();
+    resetProofreading();
+    editorMode = 'write';
+    localStorage.setItem('novella.activeNovelId', activeNovelId);
+    currentView = 'manuscript';
+    document.querySelectorAll('[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === currentView));
+    render();
+    setSaveStatus('', 'Saved');
+    showToast('Project imported as a new novel');
+  } catch (error) {
+    showToast(error.message || 'The project could not be imported.');
+  }
 });
 
 window.addEventListener('beforeunload', (event) => {

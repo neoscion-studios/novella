@@ -6,6 +6,7 @@ const path = require('node:path');
 const { Readable } = require('node:stream');
 const { createApp, plainTextForSpeech, projectToMarkdown, validateProject } = require('../server');
 const { renderMarkdown } = require('../public/markdown');
+const { MAX_PROJECT_IMPORT_SIZE, validateProjectEnvelope } = require('../project-format');
 
 const testApps = new Map();
 let nextPort = 41000;
@@ -243,4 +244,110 @@ test('stores and manages multiple novels in SQLite', async (t) => {
 
   const lastNovel = await fetch(`${base}/api/novels/${created.novel.id}`, { method: 'DELETE' });
   assert.equal(lastNovel.status, 409);
+});
+
+test('round-trips a complete portable project through preview and atomic import', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'novella-portable-api-'));
+  const server = http.createServer(createApp({ dataDir: directory }));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const source = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'novella-project-v1.json'), 'utf8'));
+  source.novel.project.chapters.push({
+    id: 'chapter-empty', title: 'Empty collections', summary: '', scenes: []
+  });
+
+  const previewResponse = await fetch(`${base}/api/projects/import/preview`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(source)
+  });
+  assert.equal(previewResponse.status, 200);
+  assert.deepEqual((await previewResponse.json()).preview, {
+    title: 'The Élan Archive', author: 'Example Author', chapters: 2, scenes: 1,
+    characters: 1, locations: 1, dictionaryEntries: 1
+  });
+  assert.equal((await fetch(`${base}/api/novels`).then((response) => response.json())).novels.length, 1);
+
+  const importedResponse = await fetch(`${base}/api/projects/import`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(source)
+  });
+  assert.equal(importedResponse.status, 201);
+  const imported = await importedResponse.json();
+  assert.notEqual(imported.novel.id, source.novel.id);
+  assert.deepEqual(imported.project, source.novel.project);
+
+  const authorDictionary = await fetch(`${base}/api/proofreading/dictionaries`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ novelId: imported.novel.id, scope: 'author', entry: 'Privateauthorword' })
+  });
+  assert.equal(authorDictionary.status, 201);
+
+  const exportedResponse = await fetch(`${base}/api/novels/${imported.novel.id}/project-export`);
+  assert.equal(exportedResponse.status, 200);
+  assert.equal(exportedResponse.headers.get('content-type'), 'application/json; charset=utf-8');
+  assert.match(exportedResponse.headers.get('content-disposition'), /the-elan-archive\.novella\.json/);
+  const exported = validateProjectEnvelope(await exportedResponse.json());
+  assert.deepEqual(exported.novel.project, source.novel.project);
+  assert.deepEqual(exported.dictionaries, source.dictionaries);
+  assert.equal(JSON.stringify(exported).includes('Privateauthorword'), false);
+  assert.equal(exported.novel.createdAt, source.novel.createdAt);
+  assert.equal(exported.novel.updatedAt, source.novel.updatedAt);
+
+  const reimported = await fetch(`${base}/api/projects/import`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(exported)
+  }).then((response) => response.json());
+  assert.notEqual(reimported.novel.id, imported.novel.id);
+  const reexported = await fetch(`${base}/api/novels/${reimported.novel.id}/project-export`).then((response) => response.json());
+  delete exported.exportedAt;
+  delete exported.novel.id;
+  delete reexported.exportedAt;
+  delete reexported.novel.id;
+  assert.deepEqual(reexported, exported);
+});
+
+test('portable import rejects malformed, unsupported, duplicate, and oversized input without writes', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'novella-portable-invalid-'));
+  const server = http.createServer(createApp({ dataDir: directory }));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const source = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'novella-project-v1.json'), 'utf8'));
+
+  const malformed = await fetch(`${base}/api/projects/import`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{broken'
+  });
+  assert.equal(malformed.status, 400);
+
+  const unsupported = await fetch(`${base}/api/projects/import`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...source, version: 99 })
+  });
+  assert.equal(unsupported.status, 400);
+  assert.match((await unsupported.json()).error, /supports version 1/);
+
+  const duplicate = structuredClone(source);
+  duplicate.novel.project.locations[0].id = duplicate.novel.project.characters[0].id;
+  const duplicateResponse = await fetch(`${base}/api/projects/import`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(duplicate)
+  });
+  assert.equal(duplicateResponse.status, 400);
+  assert.match((await duplicateResponse.json()).error, /Duplicate project ID/);
+
+  const oversized = await fetch(`${base}/api/projects/import`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'x'.repeat(MAX_PROJECT_IMPORT_SIZE + 1)
+  });
+  assert.equal(oversized.status, 413);
+
+  const catalog = await fetch(`${base}/api/novels`).then((response) => response.json());
+  assert.equal(catalog.novels.length, 1);
+  assert.equal(catalog.novels[0].title, 'Untitled novel');
+});
+
+test('portable validation accepts long Unicode Markdown and empty supported collections', async () => {
+  const source = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'novella-project-v1.json'), 'utf8'));
+  source.novel.project.chapters[0].scenes[0].content = `# Ω\n\n${'é'.repeat(900000)}\n\n\`code\` **bold**`;
+  source.novel.project.characters = [];
+  source.novel.project.locations = [];
+  source.dictionaries.novel = [];
+  const validated = validateProjectEnvelope(source);
+  assert.equal(validated.novel.project.chapters[0].scenes[0].content, source.novel.project.chapters[0].scenes[0].content);
+  assert.deepEqual(validated.novel.project.characters, []);
 });

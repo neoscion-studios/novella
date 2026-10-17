@@ -154,6 +154,9 @@ The application exposes these principal endpoints:
 - `PUT /api/novels/:id` validates and saves one owned novel.
 - `DELETE /api/novels/:id` deletes it unless it is the user's final novel (`409`).
 - `GET /api/novels/:id/export` downloads its manuscript as Markdown.
+- `GET /api/novels/:id/project-export` downloads the complete owned Novella Project JSON.
+- `POST /api/projects/import/preview` validates project JSON and returns a non-writing contents summary.
+- `POST /api/projects/import` validates again and atomically imports a new owned novel (`201`).
 - `GET /api/tts/config` reveals only safe narration capability/model information.
 - `POST /api/tts` synthesizes the supplied scene through the configured provider.
 - `GET /api/proofreading/config` returns only the safe enabled state, configured language, and text limit.
@@ -194,7 +197,7 @@ Unknown API routes return JSON `404` responses. Invalid JSON returns `400`, over
 - Retain exact snapshot/novel/scene guards, UTF-16 Markdown mappings, manual review initiation, private provider networking, and graceful unavailable behavior.
 - Maintain a deliberately error-filled diagnostic fixture and record observed LanguageTool coverage separately from deterministic application tests. Missed provider findings are documented rather than synthesized.
 
-## Phase 7: portable project export and import (planned; decision dated 2026-10-16)
+## Phase 7: portable project export and import (implemented; decision dated 2026-10-16)
 
 ### Purpose and scope
 
@@ -205,6 +208,7 @@ Unknown API routes return JSON `404` responses. Invalid JSON returns `400`, over
 ### Portable format v1
 
 - Define a documented UTF-8 JSON envelope with `format: "novella-project"`, `version: 1`, an ISO-8601 `exportedAt` timestamp, a complete `novel` document, and its `dictionaries.novel` entries. Define exact field names, validation rules, and a sample fixture before implementing endpoints.
+- The normative v1 field contract, limits, endpoint behavior, and compatibility rules are documented in `docs/PROJECT-FORMAT.md`; `test/fixtures/novella-project-v1.json` is the canonical sample payload.
 - Preserve all supported novel fields without loss: title, author, stable IDs, chapter and scene ordering, chapter summaries, scene titles, synopses, Markdown content, character cards, location cards, and their metadata. Preserve supported timestamps where applicable. Do not silently drop future or unknown fields: reject unsupported versions with an actionable error.
 - Do not export tenant/object IDs, user IDs, sessions, authentication tokens, credentials, server configuration, or other users' data.
 - Author-wide dictionaries are not novel-scoped: specify a separate, explicitly user-owned author-library export/import operation in a later increment rather than silently merging them into one novel.

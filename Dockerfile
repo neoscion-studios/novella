@@ -9,7 +9,7 @@ WORKDIR /app
 COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY --chown=node:node server.js auth.js storage.js legacy-import.js ./
+COPY --chown=node:node server.js auth.js storage.js legacy-import.js project-format.js ./
 COPY --chown=node:node scripts ./scripts
 COPY --chown=node:node public ./public
 COPY --chown=node:node proofreading ./proofreading

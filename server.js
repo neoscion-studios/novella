@@ -6,6 +6,12 @@ const { createAuth } = require('./auth');
 const { SqliteStore } = require('./storage');
 const { createLanguageToolAdapter } = require('./proofreading/languagetool-adapter');
 const { filterDictionaryIssues } = require('./proofreading/dictionary');
+const {
+  MAX_PROJECT_IMPORT_SIZE,
+  createProjectEnvelope,
+  projectImportSummary,
+  validateProjectEnvelope
+} = require('./project-format');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -121,12 +127,16 @@ function plainTextForSpeech(content) {
     .trim();
 }
 
-async function readBody(request) {
+async function readBody(request, maximumSize = MAX_BODY_SIZE) {
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > MAX_BODY_SIZE) throw new Error('Request body is too large.');
+    if (size > maximumSize) {
+      const error = new Error(`Request body exceeds the ${(maximumSize / 1024 / 1024).toLocaleString()} MiB limit.`);
+      error.statusCode = 413;
+      throw error;
+    }
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString('utf8');
@@ -448,6 +458,36 @@ function createApp({
       if (url.pathname === '/api/novels' && request.method === 'POST') {
         const body = await readBody(request);
         return send(response, 201, JSON.stringify(await createNovel(session, body ? JSON.parse(body) : {})));
+      }
+
+      if ((url.pathname === '/api/projects/import/preview' || url.pathname === '/api/projects/import') && request.method === 'POST') {
+        if (!request.headers['content-type']?.startsWith('application/json')) {
+          const error = new Error('Project imports require application/json content.');
+          error.statusCode = 415;
+          throw error;
+        }
+        const body = await readBody(request, MAX_PROJECT_IMPORT_SIZE);
+        const envelope = validateProjectEnvelope(JSON.parse(body));
+        const preview = projectImportSummary(envelope);
+        if (url.pathname.endsWith('/preview')) {
+          return send(response, 200, JSON.stringify({ preview }));
+        }
+        const imported = library.importProject(session, envelope);
+        return send(response, 201, JSON.stringify({ ...imported, preview }));
+      }
+
+      const projectExportRoute = url.pathname.match(/^\/api\/novels\/([a-z0-9-]+)\/project-export$/i);
+      if (projectExportRoute && request.method === 'GET') {
+        const envelope = createProjectEnvelope(library.exportProject(session, projectExportRoute[1]));
+        const filename = (envelope.novel.project.title || 'novel')
+          .normalize('NFKD').replace(/\p{M}/gu, '')
+          .replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+        response.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${filename || 'novel'}.novella.json"`,
+          'Cache-Control': 'no-store'
+        });
+        return response.end(`${JSON.stringify(envelope, null, 2)}\n`);
       }
 
       const novelRoute = url.pathname.match(/^\/api\/novels\/([a-z0-9-]+)(\/export)?$/i);
