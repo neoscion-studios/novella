@@ -21,6 +21,7 @@ data/catalog.json
 data/novels/
 data/project.json
 data/*.sqlite*
+data/
 
 # Editor and operating-system files
 .DS_Store
