@@ -194,3 +194,49 @@ Unknown API routes return JSON `404` responses. Invalid JSON returns `400`, over
 - Retain exact snapshot/novel/scene guards, UTF-16 Markdown mappings, manual review initiation, private provider networking, and graceful unavailable behavior.
 - Maintain a deliberately error-filled diagnostic fixture and record observed LanguageTool coverage separately from deterministic application tests. Missed provider findings are documented rather than synthesized.
 
+## Phase 7: portable project export and import (planned; decision dated 2026-10-16)
+
+### Purpose and scope
+
+- Preserve the existing publication-oriented Markdown manuscript export unchanged.
+- Add a separate, lossless, versioned **Novella Project** JSON export/import for author-owned writing data. This is portability, not a substitute for disaster-recovery backups.
+- Keep the UI simple: **Export Manuscript (.md)**, **Export Project (.json)**, and **Import Project (.json)**. Do not introduce an administration console or backup scheduler into Novella.
+
+### Portable format v1
+
+- Define a documented UTF-8 JSON envelope with `format: "novella-project"`, `version: 1`, an ISO-8601 `exportedAt` timestamp, a complete `novel` document, and its `dictionaries.novel` entries. Define exact field names, validation rules, and a sample fixture before implementing endpoints.
+- Preserve all supported novel fields without loss: title, author, stable IDs, chapter and scene ordering, chapter summaries, scene titles, synopses, Markdown content, character cards, location cards, and their metadata. Preserve supported timestamps where applicable. Do not silently drop future or unknown fields: reject unsupported versions with an actionable error.
+- Do not export tenant/object IDs, user IDs, sessions, authentication tokens, credentials, server configuration, or other users' data.
+- Author-wide dictionaries are not novel-scoped: specify a separate, explicitly user-owned author-library export/import operation in a later increment rather than silently merging them into one novel.
+- Treat the format version as independent of SQLite schema versions; define a documented upgrade path for later versions.
+
+### Export behavior
+
+- Only the authenticated owner may export a project. Use existing user-scoped storage access; unauthorized or cross-user requests must not disclose existence.
+- Generate a downloadable JSON file with a safe, title-derived filename. Never modify stored content as part of export.
+- Export a consistent saved snapshot; if browser autosave is pending, flush it or clearly block export until saved, rather than silently omitting recent edits.
+- Keep the existing `GET /api/novels/:id/export` Markdown route and output unchanged. Introduce a separate project-export route.
+
+### Import behavior and safety
+
+- Require authentication, same-origin/CSRF protection, bounded request size, and strict parsing/validation before writes. Define an explicit size limit suitable for full novels; do not silently inherit the existing 5 MiB limit if inadequate.
+- Preview the imported novel title and contents summary and require user confirmation before committing.
+- Default to **import as new novel** with newly assigned destination IDs where needed, consistently remapping internal references; never overwrite an existing novel implicitly.
+- Validate supported format/version, nested structure, counts, text lengths, IDs, and dictionary contents. Reject malformed, excessive, unsupported, or conflicting data with useful errors.
+- Import atomically, with rollback on failure; retain the original export file unchanged. Apply the destination user's ownership regardless of the source installation.
+- Maintain the final-novel invariant, user isolation, and safe UI behavior after import.
+
+### Verification and documentation
+
+- Add deterministic round-trip tests: export → import → export preserves all supported project data and ordering (excluding intentionally regenerated IDs and export timestamp).
+- Test Unicode, empty collections, long scenes, special Markdown, malformed JSON, unsupported versions, ID collisions, oversize payloads, interrupted import, pending autosave, and cross-user access.
+- Document the format and sample payload, endpoints, import behavior, compatibility rules, and user workflow in `README.md` and the specification.
+- Do not claim phase completion until tests pass and a real exported project is successfully imported and reviewed.
+
+### Related infrastructure work (separate from this phase)
+
+- Implement scheduled **system backups** outside Novella, beginning with consistent SQLite snapshots and the production configuration needed for recovery. SQLite uses WAL mode: never treat a copy of the live main database file alone as a valid backup.
+- Initially store rotating, integrity-checked backups on the available 1 TB drive; document retention, permissions, encryption, and the risk of same-host storage. Add an independent off-host copy later.
+- Use a shared infrastructure scheduler/monitor for Novella, Synapse, Resonance, and other services; each application documents its own consistent backup/restore procedure. Alert on failures and stale backups.
+- Verify restoration in an isolated location before considering recovery complete. Never start two writable Novella instances against the same database.
+- Keep infrastructure backup scripts, scheduling, retention, and monitoring separate from the Novella UI and project export/import implementation.
