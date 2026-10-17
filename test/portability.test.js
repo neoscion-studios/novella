@@ -81,17 +81,36 @@ test('defines a dedicated full-project request limit above the normal API limit'
   assert.ok(MAX_PROJECT_IMPORT_SIZE > 5 * 1024 * 1024);
 });
 
-test('portable UI labels all operations and flushes autosave before exports and import preview', async () => {
+test('Project Settings labels all operations, remains keyboard-native, and flushes autosave', async () => {
   const html = await fs.readFile(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   const app = await fs.readFile(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  assert.match(html, /<dialog id="projectSettingsDialog"[^>]+aria-labelledby="projectSettingsTitle"/);
+  assert.match(html, /<button class="icon-button settings-close"[^>]+aria-label="Close Project Settings"/);
+  assert.match(app, /data-project-settings aria-haspopup="dialog"/);
+  assert.match(app, /projectSettingsDialog\.showModal\(\)/);
+  assert.match(app, /projectSettingsTrigger\?\.focus\(\)/);
   assert.match(html, />\s*Export Manuscript \(\.md\)\s*</);
   assert.match(html, />Export Project \(\.json\)</);
   assert.match(html, />Import Project \(\.json\)</);
 
   const manuscriptHandler = app.slice(app.indexOf("'[data-export-manuscript]'"), app.indexOf("'[data-export-project]'"));
   const projectHandler = app.slice(app.indexOf("'[data-export-project]'"), app.indexOf("'[data-import-project]'"));
+  const pickerHandler = app.slice(app.indexOf("'[data-import-project]'"), app.indexOf("projectSettingsDialog.addEventListener('close'"));
   const importHandler = app.slice(app.indexOf("projectImportFile.addEventListener('change'"));
-  assert.ok(manuscriptHandler.indexOf('await saveNow()') < manuscriptHandler.indexOf('startDownload('));
-  assert.ok(projectHandler.indexOf('await saveNow()') < projectHandler.indexOf('startDownload('));
+  assert.ok(manuscriptHandler.indexOf('await saveNow()') < manuscriptHandler.indexOf('await downloadExport('));
+  assert.ok(manuscriptHandler.indexOf('await downloadExport(') < manuscriptHandler.indexOf("showToast('Manuscript export downloaded')"));
+  assert.ok(projectHandler.indexOf('await saveNow()') < projectHandler.indexOf('await downloadExport('));
+  assert.ok(projectHandler.indexOf('await downloadExport(') < projectHandler.indexOf("showToast('Project export downloaded')"));
+  assert.ok(pickerHandler.indexOf('projectImportFile.value') < pickerHandler.indexOf('projectImportFile.click()'));
   assert.ok(importHandler.indexOf('await saveNow()') < importHandler.indexOf("fetch('/api/projects/import/preview'"));
+  assert.match(app, /if \(!response\.ok\)/);
+  assert.match(app, /if \(!blob\.size\)/);
+});
+
+test('immutable samples live outside runtime data and are packaged read-only in the image', async () => {
+  const dockerfile = await fs.readFile(path.join(__dirname, '..', 'Dockerfile'), 'utf8');
+  const catalog = JSON.parse(await fs.readFile(path.join(__dirname, '..', 'samples', 'catalog.json'), 'utf8'));
+  assert.equal(catalog.novels.length, 2);
+  assert.match(dockerfile, /COPY --chown=node:node samples \.\/samples/);
+  await assert.rejects(fs.access(path.join(__dirname, '..', 'data', 'samples')));
 });

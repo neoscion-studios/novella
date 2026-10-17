@@ -175,7 +175,7 @@ test('proxies scene narration without exposing the API key', async (t) => {
 
 test('seeds fresh installations with two fictional sample novels', async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'novella-samples-'));
-  await fs.cp(path.join(__dirname, '..', 'data', 'samples'), path.join(directory, 'samples'), { recursive: true });
+  await fs.cp(path.join(__dirname, '..', 'samples'), path.join(directory, 'samples'), { recursive: true });
   const server = http.createServer(createApp({ dataDir: directory }));
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());

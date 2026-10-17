@@ -90,7 +90,9 @@ The stack preserves the digest-pinned `erikvl87/languagetool` 6.8 image. Languag
 
 ## 3. Prepare persistent data
 
-The repository's `./data` directory is bind-mounted at `/app/data`, and the database remains `/app/data/novella.sqlite`. On the production Web host, create a dedicated unprivileged account with system-assigned IDs. Do not assign it sudo access, add it to the `docker` group, or modify the existing UID 1000, 1001, or 1002 accounts.
+The repository's `./data` directory is bind-mounted at `/app/data`, and the database remains `/app/data/novella.sqlite`. It contains only persistent runtime data. Immutable first-user templates live in the root-level `samples/` directory, are copied read-only into the image at `/app/samples`, and are not part of the writable data mount. Existing databases and legacy runtime files in `data/` are unaffected by this source-layout change.
+
+On the production Web host, create a dedicated unprivileged account with system-assigned IDs. Do not assign it sudo access, add it to the `docker` group, or modify the existing UID 1000, 1001, or 1002 accounts.
 
 ```sh
 sudo groupadd --system novella

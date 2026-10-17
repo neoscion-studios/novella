@@ -16,6 +16,7 @@ const {
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DEFAULT_DATA_DIR = path.join(ROOT, 'data');
+const DEFAULT_SAMPLES_DIR = path.join(ROOT, 'samples');
 const MAX_BODY_SIZE = 5 * 1024 * 1024;
 const MAX_PROOFREADING_TEXT = 100000;
 const TTS_MODEL_LIMITS = {
@@ -149,6 +150,7 @@ function send(response, status, body, type = 'application/json; charset=utf-8') 
 
 function createApp({
   dataDir = DEFAULT_DATA_DIR,
+  samplesDir = dataDir === DEFAULT_DATA_DIR ? DEFAULT_SAMPLES_DIR : path.join(dataDir, 'samples'),
   databaseFile = process.env.DATABASE_FILE || path.join(dataDir, 'novella.sqlite'),
   store,
   publicDir = PUBLIC_DIR,
@@ -214,13 +216,13 @@ function createApp({
   async function sampleRecords() {
     if (!sampleRecordsPromise) sampleRecordsPromise = (async () => {
       try {
-        const catalog = JSON.parse(await fs.readFile(path.join(dataDir, 'samples', 'catalog.json'), 'utf8'));
+        const catalog = JSON.parse(await fs.readFile(path.join(samplesDir, 'catalog.json'), 'utf8'));
         if (!Array.isArray(catalog.novels)) throw new Error('Sample catalog is invalid.');
         const records = [];
         for (const entry of catalog.novels) {
           if (!/^[a-z0-9-]{1,100}$/i.test(entry?.id)) continue;
           const project = validateProject(JSON.parse(
-            await fs.readFile(path.join(dataDir, 'samples', 'novels', `${entry.id}.json`), 'utf8')
+            await fs.readFile(path.join(samplesDir, 'novels', `${entry.id}.json`), 'utf8')
           ));
           const now = new Date().toISOString();
           records.push({

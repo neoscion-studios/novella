@@ -28,13 +28,6 @@
             </form>
           </div>
           <span id="saveStatus" class="save-status"><span class="status-dot"></span> Saved</span>
-          <button class="export-button" type="button" data-export-manuscript>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg>
-            Export Manuscript (.md)
-          </button>
-          <button class="export-button secondary-action" type="button" data-export-project>Export Project (.json)</button>
-          <button class="export-button secondary-action" type="button" data-import-project>Import Project (.json)</button>
-          <input id="projectImportFile" type="file" accept=".json,application/json" hidden />
         </div>
       </header>
 
@@ -44,6 +37,7 @@
     </div>
 
     <div id="toast" class="toast" role="status"></div>
+    <input id="projectImportFile" type="file" accept=".json,application/json" hidden />
     <dialog id="confirmDialog" class="dialog">
       <form method="dialog">
         <div class="dialog-icon">!</div>
@@ -53,6 +47,37 @@
           <button value="cancel" class="button secondary">Keep it</button>
           <button value="confirm" class="button danger">Delete</button>
         </div>
+      </form>
+    </dialog>
+    <dialog id="projectSettingsDialog" class="dialog project-settings-dialog" aria-labelledby="projectSettingsTitle">
+      <form method="dialog">
+        <div class="settings-heading">
+          <div>
+            <p class="eyebrow">Current novel</p>
+            <h2 id="projectSettingsTitle">Project Settings</h2>
+          </div>
+          <button class="icon-button settings-close" value="close" aria-label="Close Project Settings">×</button>
+        </div>
+        <section class="settings-section" aria-labelledby="projectInformationHeading">
+          <h3 id="projectInformationHeading">Project Information</h3>
+          <dl class="project-information">
+            <div><dt>Title</dt><dd id="settingsProjectTitle"></dd></div>
+            <div><dt>Author</dt><dd id="settingsProjectAuthor"></dd></div>
+          </dl>
+        </section>
+        <section class="settings-section" aria-labelledby="projectExportHeading">
+          <h3 id="projectExportHeading">Export</h3>
+          <div class="settings-actions">
+            <button class="button" type="button" data-export-manuscript>Export Manuscript (.md)</button>
+            <button class="button secondary" type="button" data-export-project>Export Project (.json)</button>
+          </div>
+        </section>
+        <section class="settings-section" aria-labelledby="projectImportHeading">
+          <h3 id="projectImportHeading">Import</h3>
+          <div class="settings-actions">
+            <button class="button secondary" type="button" data-import-project>Import Project (.json)</button>
+          </div>
+        </section>
       </form>
     </dialog>
     <dialog id="importDialog" class="dialog import-dialog">

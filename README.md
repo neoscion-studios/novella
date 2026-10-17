@@ -13,7 +13,7 @@ npm start
 
 Open [http://localhost:4173](http://localhost:4173). Use the novel selector above the manuscript title to create, switch, or delete novels. Changes are saved automatically in `data/novella.sqlite`.
 
-Each new user begins with two fictional sample novels from `data/samples/`. Editing them changes only that user's database records.
+Each new user begins with two fictional sample novels from the immutable `samples/` templates. Editing them changes only that user's database records; `data/` is reserved for persistent runtime data.
 
 Existing JSON installations must be imported explicitly with `npm run migrate:json`; see the [deployment guide](docs/deployment.md). The importer requires the owner's stable Entra tenant and object IDs and leaves the JSON files untouched.
 
@@ -29,7 +29,7 @@ Exports use level-one headings for the book title and level-two headings for cha
 
 ## Project portability
 
-The top bar provides three distinct actions:
+Open **Project Settings** from the gear button at the bottom of the manuscript sidebar. The accessible settings dialog shows the current title and author and provides three distinct actions:
 
 - **Export Manuscript (.md)** creates the existing publication-oriented Markdown manuscript.
 - **Export Project (.json)** saves a lossless, versioned Novella Project containing the current novel, its planning metadata, and its novel-specific dictionary.

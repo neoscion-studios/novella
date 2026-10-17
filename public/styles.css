@@ -105,7 +105,7 @@ button { color: inherit; }
 .save-status.error { color: #a84235; }
 .save-status.error .status-dot { background: #a84235; }
 
-.export-button, .button {
+.button {
   display: inline-flex;
   justify-content: center;
   align-items: center;
@@ -122,11 +122,8 @@ button { color: inherit; }
   cursor: pointer;
   transition: transform .15s, background .15s;
 }
-.export-button { border: 0; cursor: pointer; font: inherit; white-space: nowrap; }
-.export-button.secondary-action { color: var(--text); background: var(--paper-dark); }
-.export-button.secondary-action:hover { background: var(--line); }
-.export-button:hover, .button:hover { background: var(--accent-dark); transform: translateY(-1px); }
-.export-button svg { width: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.button:hover { background: var(--accent-dark); transform: translateY(-1px); }
+.button:disabled { cursor: wait; opacity: .65; transform: none; }
 
 .workspace { min-height: calc(100vh - 68px); }
 .loading-state { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 70vh; color: var(--muted); }
@@ -200,6 +197,24 @@ button { color: inherit; }
 .icon-button.small { width: 24px; height: 24px; font-size: 16px; }
 
 .outline-list { flex: 1; padding: 4px 10px 28px; overflow-y: auto; }
+.outline-footer { padding: 11px 14px; border-top: 1px solid var(--line); }
+.project-settings-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+.project-settings-button:hover, .project-settings-button:focus-visible { color: var(--accent); background: rgba(255,255,255,.7); }
+.project-settings-button span { font-size: 16px; }
 .chapter-group { margin: 6px 0; border-radius: 9px; }
 .chapter-group.dragging { opacity: .4; }
 .chapter-group.drop-before { box-shadow: 0 -2px var(--accent); }
@@ -454,6 +469,18 @@ button { color: inherit; }
 .dialog.import-dialog { width: min(500px, calc(100% - 32px)); }
 .dialog .import-icon { color: var(--accent); background: var(--paper-dark); }
 .dialog-actions { display: flex; justify-content: center; gap: 10px; }
+.dialog.project-settings-dialog { width: min(520px, calc(100% - 32px)); text-align: left; }
+.settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.settings-heading .eyebrow { margin-bottom: 5px; }
+.settings-heading h2 { margin-bottom: 0; }
+.settings-close { flex: 0 0 auto; font-size: 23px; }
+.settings-section { margin-top: 25px; padding-top: 20px; border-top: 1px solid var(--line); }
+.settings-section h3 { margin: 0 0 12px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.project-information { display: grid; gap: 10px; margin: 0; }
+.project-information div { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 12px; }
+.project-information dt { color: var(--muted); font-size: 12px; }
+.project-information dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 9px; }
 
 .toast { position: fixed; right: 24px; bottom: 24px; z-index: 40; padding: 11px 16px; border-radius: 9px; background: var(--ink); color: white; box-shadow: var(--shadow); opacity: 0; transform: translateY(12px); pointer-events: none; transition: .2s; font-size: 12px; }
 .toast.show { opacity: 1; transform: translateY(0); }
@@ -465,8 +492,7 @@ button { color: inherit; }
   .topbar { grid-template-columns: auto 1fr; height: auto; min-height: 62px; padding: 12px 16px; }
   .brand span:last-child, .save-status, .auth-user { display: none; }
   .primary-nav { grid-row: 2; grid-column: 1 / -1; justify-content: center; height: 39px; order: 3; }
-  .top-actions { flex-wrap: wrap; gap: 7px; padding: 4px 0; }
-  .export-button { min-height: 34px; padding: 0 9px; font-size: 11px; }
+  .top-actions { gap: 8px; }
   .manuscript-layout { grid-template-columns: 1fr; }
   .outline { position: relative; top: 0; height: auto; max-height: 300px; border-right: 0; border-bottom: 1px solid var(--line); }
   .outline-list { max-height: 190px; }

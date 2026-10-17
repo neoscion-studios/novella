@@ -15,7 +15,7 @@ Use Node.js 24 or newer.
 - `legacy-import.js` and `scripts/migrate-json-to-sqlite.js`: non-destructive JSON migration.
 - `public/`: browser UI, styles, and safe Markdown renderer.
 - `test/`: Node test-runner coverage for server, auth/isolation, and migration.
-- `data/samples/`: immutable templates copied into new user libraries.
+- `samples/`: immutable, image-packaged templates copied into new user libraries.
 - `docs/`: reconstructed product specification and deployment documentation.
 - `compose.yaml` and `Dockerfile`: hardened private deployment behind the separately managed shared Caddy edge.
 
@@ -47,7 +47,7 @@ The app defaults to `http://127.0.0.1:4173`. Local development does not require 
 - Keep `/api/health` public and minimal; do not add database, identity, or configuration details to it.
 - Validate and normalize data at the server boundary. Preserve the 5 MiB request limit unless requirements explicitly change.
 - Preserve Markdown export rules: H1 book title, optional italic byline, H2 chapters, no scene planning metadata, scene separators, and heading demotion outside code fences.
-- Treat `data/samples/` as immutable templates. A user's edits must affect only their database records.
+- Treat `samples/` as immutable templates. A user's edits must affect only their database records.
 - Keep legacy migration non-destructive, transactional, idempotent for identical data, and conflict-rejecting for different data with the same novel ID.
 - Do not commit `.env` files, credentials, `data/novella.sqlite`, WAL/SHM files, or other runtime user data.
 

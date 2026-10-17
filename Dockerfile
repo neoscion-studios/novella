@@ -13,6 +13,7 @@ COPY --chown=node:node server.js auth.js storage.js legacy-import.js project-for
 COPY --chown=node:node scripts ./scripts
 COPY --chown=node:node public ./public
 COPY --chown=node:node proofreading ./proofreading
+COPY --chown=node:node samples ./samples
 
 RUN mkdir -p /app/data && chown node:node /app/data
 

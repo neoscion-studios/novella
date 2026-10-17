@@ -8,7 +8,11 @@ const confirmDialog = document.querySelector('#confirmDialog');
 const importDialog = document.querySelector('#importDialog');
 const importSummary = document.querySelector('#importSummary');
 const projectImportFile = document.querySelector('#projectImportFile');
+const projectSettingsDialog = document.querySelector('#projectSettingsDialog');
+const settingsProjectTitle = document.querySelector('#settingsProjectTitle');
+const settingsProjectAuthor = document.querySelector('#settingsProjectAuthor');
 const PROJECT_IMPORT_MAX_BYTES = 20 * 1024 * 1024;
+let projectSettingsTrigger = null;
 
 let project = null;
 let currentView = 'manuscript';
@@ -259,6 +263,11 @@ function renderManuscript() {
           <button class="icon-button" data-add-chapter title="Add chapter" aria-label="Add chapter">＋</button>
         </div>
         <div class="outline-list">${project.chapters.map(chapterMarkup).join('')}</div>
+        <div class="outline-footer">
+          <button class="project-settings-button" type="button" data-project-settings aria-haspopup="dialog">
+            <span aria-hidden="true">⚙</span> Project Settings
+          </button>
+        </div>
       </aside>
       <section class="editor-area">${active ? editorMarkup(active.chapter, active.scene) : emptyEditorMarkup()}</section>
     </div>`;
@@ -927,6 +936,14 @@ document.querySelector('.primary-nav').addEventListener('click', (event) => {
 });
 
 app.addEventListener('click', (event) => {
+  const settingsButton = event.target.closest('[data-project-settings]');
+  if (settingsButton) {
+    projectSettingsTrigger = settingsButton;
+    settingsProjectTitle.textContent = project.title || 'Untitled novel';
+    settingsProjectAuthor.textContent = project.author || 'Not specified';
+    projectSettingsDialog.showModal();
+    return;
+  }
   if (event.target.closest('[data-dictionary-toggle]')) return toggleDictionaries();
   if (event.target.closest('[data-proofread-previous]')) return navigateProofreadingIssue(-1);
   if (event.target.closest('[data-proofread-next]')) return navigateProofreadingIssue(1);
@@ -1126,30 +1143,74 @@ app.addEventListener('dragend', () => {
   document.querySelectorAll('.dragging, .drop-before').forEach((item) => item.classList.remove('dragging', 'drop-before'));
 });
 
-function startDownload(url) {
+function downloadFilename(response, fallback) {
+  const disposition = response.headers.get('content-disposition') || '';
+  const match = disposition.match(/filename="([^"]+)"/i);
+  return match?.[1] || fallback;
+}
+
+async function downloadExport(url, fallbackFilename, expectedContentType) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({ error: 'The export could not be created.' }));
+    throw new Error(result.error || 'The export could not be created.');
+  }
+  if (!response.headers.get('content-type')?.startsWith(expectedContentType)) {
+    throw new Error('The server returned an unexpected export format.');
+  }
+  const blob = await response.blob();
+  if (!blob.size) throw new Error('The server returned an empty export.');
+  const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.href = url;
-  link.download = '';
+  link.href = objectUrl;
+  link.download = downloadFilename(response, fallbackFilename);
   document.body.appendChild(link);
   link.click();
   link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
-document.querySelector('[data-export-manuscript]').addEventListener('click', async () => {
-  if (!(await saveNow())) return;
-  startDownload(`/api/novels/${encodeURIComponent(activeNovelId)}/export?t=${Date.now()}`);
-  showToast('Markdown export created');
+document.querySelector('[data-export-manuscript]').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    if (!(await saveNow())) return;
+    await downloadExport(`/api/novels/${encodeURIComponent(activeNovelId)}/export?t=${Date.now()}`, 'manuscript.md', 'text/markdown');
+    showToast('Manuscript export downloaded');
+  } catch (error) {
+    showToast(error.message || 'The manuscript export could not be downloaded.');
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+  }
 });
 
-document.querySelector('[data-export-project]').addEventListener('click', async () => {
-  if (!(await saveNow())) return;
-  startDownload(`/api/novels/${encodeURIComponent(activeNovelId)}/project-export?t=${Date.now()}`);
-  showToast('Project export created');
+document.querySelector('[data-export-project]').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    if (!(await saveNow())) return;
+    await downloadExport(`/api/novels/${encodeURIComponent(activeNovelId)}/project-export?t=${Date.now()}`, 'novel.novella.json', 'application/json');
+    showToast('Project export downloaded');
+  } catch (error) {
+    showToast(error.message || 'The project export could not be downloaded.');
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+  }
 });
 
 document.querySelector('[data-import-project]').addEventListener('click', () => {
+  projectSettingsDialog.close();
   projectImportFile.value = '';
   projectImportFile.click();
+});
+
+projectSettingsDialog.addEventListener('close', () => {
+  projectSettingsTrigger?.focus();
+  projectSettingsTrigger = null;
 });
 
 function confirmProjectImport(preview) {

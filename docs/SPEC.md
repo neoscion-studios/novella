@@ -204,6 +204,7 @@ Unknown API routes return JSON `404` responses. Invalid JSON returns `400`, over
 - Preserve the existing publication-oriented Markdown manuscript export unchanged.
 - Add a separate, lossless, versioned **Novella Project** JSON export/import for author-owned writing data. This is portability, not a substitute for disaster-recovery backups.
 - Keep the UI simple: **Export Manuscript (.md)**, **Export Project (.json)**, and **Import Project (.json)**. Do not introduce an administration console or backup scheduler into Novella.
+- Place these controls in an accessible **Project Settings** dialog opened by a gear button at the bottom of the manuscript sidebar. Show the current title and author there without duplicating their existing editing controls. (Refined interaction decision dated 2026-10-16.)
 
 ### Portable format v1
 
@@ -219,6 +220,7 @@ Unknown API routes return JSON `404` responses. Invalid JSON returns `400`, over
 - Only the authenticated owner may export a project. Use existing user-scoped storage access; unauthorized or cross-user requests must not disclose existence.
 - Generate a downloadable JSON file with a safe, title-derived filename. Never modify stored content as part of export.
 - Export a consistent saved snapshot; if browser autosave is pending, flush it or clearly block export until saved, rather than silently omitting recent edits.
+- Fetch and validate the HTTP export response before initiating the browser download or reporting success; surface server failures to the writer.
 - Keep the existing `GET /api/novels/:id/export` Markdown route and output unchanged. Introduce a separate project-export route.
 
 ### Import behavior and safety
